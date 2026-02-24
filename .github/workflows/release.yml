@@ -16,10 +16,10 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.23'
 
@@ -45,7 +45,7 @@ jobs:
           tar czf chough_${GITHUB_REF_NAME}_Linux_arm64.tar.gz chough-linux-arm64
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: chough-linux-${{ matrix.arch }}
           path: chough_${GITHUB_REF_NAME}_*.tar.gz
@@ -54,10 +54,10 @@ jobs:
     runs-on: macos-15-intel  # Intel runner (x64)
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.23'
 
@@ -69,7 +69,7 @@ jobs:
           tar czf chough_${GITHUB_REF_NAME}_Darwin_x86_64.tar.gz chough-darwin-amd64
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: chough-darwin-amd64
           path: chough_${GITHUB_REF_NAME}_Darwin_x86_64.tar.gz
@@ -78,10 +78,10 @@ jobs:
     runs-on: macos-latest  # Apple Silicon runner
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.23'
 
@@ -93,7 +93,7 @@ jobs:
           tar czf chough_${GITHUB_REF_NAME}_Darwin_arm64.tar.gz chough-darwin-arm64
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: chough-darwin-arm64
           path: chough_${GITHUB_REF_NAME}_Darwin_arm64.tar.gz
@@ -102,10 +102,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.23'
 
@@ -115,7 +115,7 @@ jobs:
           Compress-Archive -Path chough-windows-amd64.exe -DestinationPath chough_${env:GITHUB_REF_NAME}_Windows_x86_64.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: chough-windows-amd64
           path: chough_${GITHUB_REF_NAME}_Windows_x86_64.zip
@@ -125,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: chough-*
           merge-multiple: true
@@ -137,7 +137,7 @@ jobs:
           cat checksums.txt
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             chough_*.tar.gz
