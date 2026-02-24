@@ -13,21 +13,41 @@ import (
 	"github.com/hyperpuncher/chough/internal/asr"
 )
 
+// ANSI color codes
+const (
+	reset   = "\033[0m"
+	bold    = "\033[1m"
+	dim     = "\033[2m"
+	green   = "\033[32m"
+	yellow  = "\033[33m"
+	blue    = "\033[34m"
+	magenta = "\033[35m"
+	cyan    = "\033[36m"
+	white   = "\033[37m"
+)
+
 func main() {
 	// Define flags
 	chunkSize := flag.Int("c", 30, "chunk size in seconds")
 	flag.IntVar(chunkSize, "chunk-size", 30, "chunk size in seconds")
 
-	// Custom usage message
+	// Pretty usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: chough [flags] <audio-file>\n\n")
-		fmt.Fprintf(os.Stderr, "A fast, memory-efficient ASR CLI using sherpa-onnx\n\n")
-		fmt.Fprintf(os.Stderr, "Flags:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  chough audio.mp3              # default 30s chunks\n")
-		fmt.Fprintf(os.Stderr, "  chough -c 60 audio.mp3        # 60s chunks\n")
-		fmt.Fprintf(os.Stderr, "  chough --chunk-size 15 audio.mp3  # 15s chunks\n")
+		fmt.Fprintf(os.Stderr, "%s🐦‍⬛ %schough%s\n\n", bold, magenta, reset)
+		fmt.Fprintf(os.Stderr, "%sUsage:%s chough [flags] <audio-file>\n\n", bold, reset)
+		fmt.Fprintf(os.Stderr, "%sFlags:%s\n", bold, reset)
+		fmt.Fprintf(os.Stderr, "  %s-c, --chunk-size%s %sint%s    chunk size in seconds %s(default: 30)%s\n",
+			cyan, reset, yellow, reset, dim, reset)
+		fmt.Fprintf(os.Stderr, "\n%sExamples:%s\n", bold, reset)
+		fmt.Fprintf(os.Stderr, "  %s$%s chough audio.mp3 %s# default 30s chunks%s\n",
+			green, reset, dim, reset)
+		fmt.Fprintf(os.Stderr, "  %s$%s chough -c 60 podcast.mp3 %s# 60s chunks, faster%s\n",
+			green, reset, dim, reset)
+		fmt.Fprintf(os.Stderr, "  %s$%s chough --chunk-size 15 talk.mp3 %s# 15s chunks, less memory%s\n",
+			green, reset, dim, reset)
+		fmt.Fprintf(os.Stderr, "\n%sEnvironment:%s\n", bold, reset)
+		fmt.Fprintf(os.Stderr, "  %sCHOUGH_MODEL%s    path to model directory %s(required)%s\n",
+			cyan, reset, dim, reset)
 	}
 
 	flag.Parse()
