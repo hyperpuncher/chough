@@ -131,14 +131,16 @@ jobs:
 
       - name: Create checksums
         run: |
-          sha256sum chough_${GITHUB_REF_NAME}_*.tar.gz chough_${GITHUB_REF_NAME}_*.zip > checksums.txt
+          ls -la
+          sha256sum chough_*.tar.gz chough_*.zip > checksums.txt || true
+          cat checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            chough_${GITHUB_REF_NAME}_*.tar.gz
-            chough_${GITHUB_REF_NAME}_*.zip
+            chough_*.tar.gz
+            chough_*.zip
             checksums.txt
           generate_release_notes: true
           draft: false
