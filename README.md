@@ -12,31 +12,21 @@ Fast, memory-efficient ASR CLI using Parakeet TDT 0.6b V3 via sherpa-onnx with c
 
 ## Installation
 
-### Homebrew
-
-```bash
-brew tap hyperpuncher/chough
-brew install chough
-```
-
-### Binary releases
+### Binary releases (recommended)
 
 Download from [GitHub Releases](https://github.com/hyperpuncher/chough/releases):
 
 ```bash
 # Linux AMD64
-curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough-linux-amd64 -o chough
-chmod +x chough
+curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough_${VERSION}_Linux_x86_64.tar.gz | tar xz
 sudo mv chough /usr/local/bin/
 
-# macOS (Intel)
-curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough-darwin-amd64 -o chough
-chmod +x chough
+# macOS Intel
+curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough_${VERSION}_Darwin_x86_64.tar.gz | tar xz
 sudo mv chough /usr/local/bin/
 
-# macOS (Apple Silicon)
-curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough-darwin-arm64 -o chough
-chmod +x chough
+# macOS Apple Silicon  
+curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough_${VERSION}_Darwin_arm64.tar.gz | tar xz
 sudo mv chough /usr/local/bin/
 ```
 
@@ -45,6 +35,13 @@ sudo mv chough /usr/local/bin/
 ```bash
 go install github.com/hyperpuncher/chough/cmd/chough@latest
 ```
+
+<!-- ### Homebrew (coming soon)
+
+```bash
+brew tap hyperpuncher/chough
+brew install chough
+``` -->
 
 ## Usage
 

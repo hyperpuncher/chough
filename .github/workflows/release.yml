@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -32,6 +32,7 @@ jobs:
         if: matrix.arch == 'amd64'
         run: |
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-amd64 ./cmd/chough
+          tar czf chough_${GITHUB_REF_NAME}_Linux_x86_64.tar.gz chough-linux-amd64
 
       - name: Build ARM64
         if: matrix.arch == 'arm64'
@@ -41,12 +42,13 @@ jobs:
           export CGO_ENABLED=1
           export GOARCH=arm64
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-arm64 ./cmd/chough
+          tar czf chough_${GITHUB_REF_NAME}_Linux_arm64.tar.gz chough-linux-arm64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: chough-linux-${{ matrix.arch }}
-          path: chough-linux-${{ matrix.arch }}
+          path: chough_${GITHUB_REF_NAME}_*.tar.gz
 
   build-macos:
     runs-on: macos-latest
@@ -67,18 +69,20 @@ jobs:
         run: |
           export GOARCH=amd64
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-amd64 ./cmd/chough
+          tar czf chough_${GITHUB_REF_NAME}_Darwin_x86_64.tar.gz chough-darwin-amd64
 
       - name: Build ARM64
         if: matrix.arch == 'arm64'
         run: |
           export GOARCH=arm64
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-arm64 ./cmd/chough
+          tar czf chough_${GITHUB_REF_NAME}_Darwin_arm64.tar.gz chough-darwin-arm64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: chough-darwin-${{ matrix.arch }}
-          path: chough-darwin-${{ matrix.arch }}
+          path: chough_${GITHUB_REF_NAME}_*.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -94,12 +98,13 @@ jobs:
       - name: Build
         run: |
           go build -ldflags="-s -w -X main.version=${env:GITHUB_REF_NAME}" -o chough-windows-amd64.exe ./cmd/chough
+          Compress-Archive -Path chough-windows-amd64.exe -DestinationPath chough_${env:GITHUB_REF_NAME}_Windows_x86_64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: chough-windows-amd64
-          path: chough-windows-amd64.exe
+          path: chough_${GITHUB_REF_NAME}_Windows_x86_64.zip
 
   release:
     needs: [build-linux, build-macos, build-windows]
@@ -114,7 +119,7 @@ jobs:
       - name: Create checksums
         run: |
           cd ./artifacts
-          sha256sum chough-* > checksums.txt
+          sha256sum chough_${GITHUB_REF_NAME}_*.tar.gz chough_${GITHUB_REF_NAME}_*.zip > checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
