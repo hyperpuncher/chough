@@ -59,6 +59,8 @@ type Cue struct {
 	Text  string
 }
 
+var version = "dev"
+
 func main() {
 	// Define flags
 	chunkSize := flag.Int("c", 60, "chunk size in seconds")
@@ -67,6 +69,7 @@ func main() {
 	flag.StringVar(format, "format", "text", "output format (text, json, vtt)")
 	outputFile := flag.String("o", "", "output file (default: stdout)")
 	flag.StringVar(outputFile, "output", "", "output file (default: stdout)")
+	showVersion := flag.Bool("version", false, "show version")
 
 	// Pretty usage message
 	flag.Usage = func() {
@@ -79,6 +82,7 @@ func main() {
 			cyan, reset, yellow, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "  %s-o, --output%s %sfile%s      output file %s(default: stdout)%s\n",
 			cyan, reset, yellow, reset, dim, reset)
+		fmt.Fprintf(os.Stderr, "  %s--version%s               show version\n", cyan, reset)
 		fmt.Fprintf(os.Stderr, "\n%sExamples:%s\n", bold, reset)
 		fmt.Fprintf(os.Stderr, "  %s$%s chough audio.mp3 %s# 60s chunks, text output%s\n",
 			green, reset, dim, reset)
@@ -92,6 +96,11 @@ func main() {
 	}
 
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	if flag.NArg() < 1 {
 		flag.Usage()

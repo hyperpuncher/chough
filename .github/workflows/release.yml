@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgomp1
+
+      - name: Build AMD64
+        if: matrix.arch == 'amd64'
+        run: |
+          go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-amd64 ./cmd/chough
+
+      - name: Build ARM64
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          export CC=aarch64-linux-gnu-gcc
+          export CGO_ENABLED=1
+          export GOARCH=arm64
+          go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-arm64 ./cmd/chough
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chough-linux-${{ matrix.arch }}
+          path: chough-linux-${{ matrix.arch }}
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build AMD64
+        if: matrix.arch == 'amd64'
+        run: |
+          export GOARCH=amd64
+          go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-amd64 ./cmd/chough
+
+      - name: Build ARM64
+        if: matrix.arch == 'arm64'
+        run: |
+          export GOARCH=arm64
+          go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-arm64 ./cmd/chough
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chough-darwin-${{ matrix.arch }}
+          path: chough-darwin-${{ matrix.arch }}
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build
+        run: |
+          go build -ldflags="-s -w -X main.version=${env:GITHUB_REF_NAME}" -o chough-windows-amd64.exe ./cmd/chough
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chough-windows-amd64
+          path: chough-windows-amd64.exe
+
+  release:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Create checksums
+        run: |
+          cd ./artifacts
+          sha256sum chough-* > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
