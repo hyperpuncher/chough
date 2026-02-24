@@ -9,7 +9,8 @@ class Chough < Formula
       url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_Darwin_arm64.tar.gz"
       sha256 :no_check
     else
-      odie "chough requires Apple Silicon (ARM64). Intel Macs are not supported."
+      url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_Darwin_x86_64.tar.gz"
+      sha256 :no_check
     end
   end
 
