@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hyperpuncher/chough/internal/asr"
+	"github.com/hyperpuncher/chough/internal/models"
 )
 
 // ANSI color codes
@@ -72,7 +73,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  %s$%s chough -f vtt -o subs.vtt audio.mp3 %s# WebVTT to file%s\n",
 			green, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "\n%sEnvironment:%s\n", bold, reset)
-		fmt.Fprintf(os.Stderr, "  %sCHOUGH_MODEL%s    path to model directory %s(required)%s\n",
+		fmt.Fprintf(os.Stderr, "  %sCHOUGH_MODEL%s    path to model dir %s(optional, auto-downloaded if not set)%s\n",
 			cyan, reset, dim, reset)
 	}
 
@@ -93,10 +94,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load model once
+	// Load model (auto-download if needed)
 	fmt.Fprintln(os.Stderr, "Loading model...")
+	modelPath, err := models.GetModelPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to get model: %v\n", err)
+		os.Exit(1)
+	}
 	config := asr.Config{
-		ModelPath:  os.Getenv("CHOUGH_MODEL"),
+		ModelPath:  modelPath,
 		NumThreads: 4,
 		SampleRate: 16000,
 		FeatureDim: 80,
