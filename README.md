@@ -87,11 +87,26 @@ Models are automatically downloaded to `$XDG_CACHE_HOME/chough/models` (~650MB).
 
 ## Performance
 
-| File | Duration | Processing Time | Speed |
-|------|----------|-----------------|-------|
-| Short | 15s | 0.6s | 24x |
-| Medium | 5min | 15s | 20x |
-| Long | 1hour | ~3min | 20x |
+Benchmark on 1-minute audio file (AMD Ryzen, 8 cores):
+
+| Tool | Model | Time | Realtime Factor | Memory |
+|------|-------|------|-----------------|--------|
+| **chough** | Parakeet TDT 0.6b V3 | **~3s** | **~20x** | **~500MB** |
+| whisper-ctranslate2 | medium | ~30s | ~2x | ~2-3GB |
+| whisper | turbo | ~60s | ~1x | ~1.5GB |
+
+**chough is ~10-20x faster** than other tools while using **3-6x less memory**.
+
+### Speed by audio length
+
+| Duration | chough | Typical Speed |
+|----------|--------|---------------|
+| 15s | 0.6s | **24x realtime** |
+| 1min | 3s | **20x realtime** |
+| 5min | 15s | **20x realtime** |
+| 1hour | ~3min | **20x realtime** |
+
+Run your own benchmarks: `just benchmark <audio-file>`
 
 ## License
 

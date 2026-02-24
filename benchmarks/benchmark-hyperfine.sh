@@ -56,17 +56,17 @@ elif command -v uvx >/dev/null 2>&1; then
     echo "✓ whisper-ctranslate2 via uvx (medium)"
 fi
 
-# openai-whisper turbo
-if command -v whisper >/dev/null 2>&1; then
-    BENCHMARK_CMDS+=("whisper --model=turbo --output_format=txt '$AUDIO_FILE' --output_dir='$RESULTS_DIR/whisper' 2>/dev/null")
-    echo "✓ whisper (turbo)"
+# openai-whisper turbo via uvx
+if command -v uvx >/dev/null 2>&1; then
+    BENCHMARK_CMDS+=("uvx --from openai-whisper whisper --model=turbo --output_format=txt '$AUDIO_FILE' --output_dir='$RESULTS_DIR/whisper' 2>/dev/null")
+    echo "✓ whisper (turbo via uvx)"
 fi
 
 if [ ${#BENCHMARK_CMDS[@]} -eq 0 ]; then
     echo "Error: No benchmark tools found!"
     echo "Build chough: just build"
     echo "Install whisper-ctranslate2: uv tool install whisper-ctranslate2"
-    echo "Install whisper: pip install openai-whisper"
+    echo "Install whisper: uv tool install openai-whisper"
     exit 1
 fi
 
@@ -83,7 +83,6 @@ hyperfine \
     --export-json "$RESULTS_JSON" \
     --export-markdown "$RESULTS_DIR/hyperfine_$TIMESTAMP.md" \
     --style full \
-    --setup "sync && echo 3 | sudo tee /proc/sys/vm/drop_caches 2>/dev/null || true" \
     "${BENCHMARK_CMDS[@]}"
 
 echo ""
