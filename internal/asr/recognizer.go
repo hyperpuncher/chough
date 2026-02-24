@@ -68,6 +68,7 @@ func (r *Recognizer) Transcribe(audioPath string) (*Result, error) {
 	// Get result
 	sherpaResult := stream.GetResult()
 
+
 	return &Result{
 		Text:       sherpaResult.Text,
 		Timestamps: sherpaResult.Timestamps,

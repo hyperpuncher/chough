@@ -37,10 +37,17 @@ type ChunkResult struct {
 	Tokens     []string
 }
 
+// Cue represents a subtitle cue for VTT
+type Cue struct {
+	Start float64
+	End   float64
+	Text  string
+}
+
 func main() {
 	// Define flags
-	chunkSize := flag.Int("c", 30, "chunk size in seconds")
-	flag.IntVar(chunkSize, "chunk-size", 30, "chunk size in seconds")
+	chunkSize := flag.Int("c", 60, "chunk size in seconds")
+	flag.IntVar(chunkSize, "chunk-size", 60, "chunk size in seconds")
 	format := flag.String("f", "text", "output format (text, json, vtt)")
 	flag.StringVar(format, "format", "text", "output format (text, json, vtt)")
 	outputFile := flag.String("o", "", "output file (default: stdout)")
@@ -51,18 +58,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s🐦‍⬛ %schough%s\n\n", bold, magenta, reset)
 		fmt.Fprintf(os.Stderr, "%sUsage:%s chough [flags] <audio-file>\n\n", bold, reset)
 		fmt.Fprintf(os.Stderr, "%sFlags:%s\n", bold, reset)
-		fmt.Fprintf(os.Stderr, "  %s-c, --chunk-size%s %sint%s    chunk size in seconds %s(default: 30)%s\n",
+		fmt.Fprintf(os.Stderr, "  %s-c, --chunk-size%s %sint%s    chunk size in seconds %s(default: 60)%s\n",
 			cyan, reset, yellow, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "  %s-f, --format%s %sstring%s    output format: text, json, vtt %s(default: text)%s\n",
 			cyan, reset, yellow, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "  %s-o, --output%s %sfile%s      output file %s(default: stdout)%s\n",
 			cyan, reset, yellow, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "\n%sExamples:%s\n", bold, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough audio.mp3 %s# plain text to stdout%s\n",
+		fmt.Fprintf(os.Stderr, "  %s$%s chough audio.mp3 %s# 60s chunks, text output%s\n",
 			green, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough -f vtt -o out.vtt audio.mp3 %s# WebVTT to file%s\n",
+		fmt.Fprintf(os.Stderr, "  %s$%s chough -c 30 talk.mp3 %s# 30s chunks%s\n",
 			green, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough --format json talk.mp3 %s# JSON to stdout%s\n",
+		fmt.Fprintf(os.Stderr, "  %s$%s chough -f vtt -o subs.vtt audio.mp3 %s# WebVTT to file%s\n",
 			green, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "\n%sEnvironment:%s\n", bold, reset)
 		fmt.Fprintf(os.Stderr, "  %sCHOUGH_MODEL%s    path to model directory %s(required)%s\n",
@@ -111,25 +118,33 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Build fixed chunk boundaries
+	chunkCount := int(duration/float64(chunkSecs)) + 1
+	var boundaries []float64
+	for i := 0; i < chunkCount; i++ {
+		start := float64(i * chunkSecs)
+		if start >= duration {
+			break
+		}
+		boundaries = append(boundaries, start)
+	}
+	boundaries = append(boundaries, duration)
+
 	fmt.Fprintf(os.Stderr, "Audio: %.1fs, chunks: %ds, format: %s\n", duration, chunkSecs, outputFormat)
 
 	// Process chunks
 	startTime := time.Now()
-	chunkCount := int(duration/float64(chunkSecs)) + 1
 	var results []ChunkResult
 
-	for i := 0; i < chunkCount; i++ {
-		chunkStart := float64(i * chunkSecs)
-		chunkEnd := chunkStart + float64(chunkSecs)
-		if chunkEnd > duration {
-			chunkEnd = duration
+	for i := 0; i < len(boundaries)-1; i++ {
+		chunkStart := boundaries[i]
+		chunkEnd := boundaries[i+1]
+
+		if chunkEnd-chunkStart < 0.5 { // Skip chunks smaller than 0.5s
+			continue
 		}
 
-		if chunkEnd <= chunkStart+0.5 { // Skip chunks smaller than 0.5s
-			break
-		}
-
-		fmt.Fprintf(os.Stderr, "Chunk %d/%d (%.1fs-%.1fs)... ", i+1, chunkCount, chunkStart, chunkEnd)
+		fmt.Fprintf(os.Stderr, "Chunk %d/%d (%.1fs-%.1fs)... ", i+1, len(boundaries)-1, chunkStart, chunkEnd)
 
 		result, err := transcribeChunk(recognizer, audioFile, chunkStart, chunkEnd-chunkStart)
 		if err != nil {
@@ -244,12 +259,6 @@ func outputVTT(out *os.File, results []ChunkResult) {
 			cueNum++
 		}
 	}
-}
-
-type Cue struct {
-	Start float64
-	End   float64
-	Text  string
 }
 
 func groupTokensIntoCues(r ChunkResult) []Cue {
