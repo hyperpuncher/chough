@@ -1,6 +1,6 @@
 # 🐦‍⬛ chough
 
-*pronounced "chuff" /tʃʌf/* — a fast, memory-efficient ASR CLI using [Parakeet TDT 0.6b V3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with chunked processing.
+_pronounced "chuff" /tʃʌf/_ — a fast, memory-efficient ASR CLI using [Parakeet TDT 0.6b V3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with chunked processing.
 
 ## Features
 
@@ -60,13 +60,13 @@ chough -c 30 long-interview.wav
 
 ## Flags
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-c, --chunk-size` | Chunk size in seconds | 60 |
-| `-f, --format` | Output format: text, json, vtt | text |
-| `-o, --output` | Output file (default: stdout) | - |
-| `--version` | Show version | - |
-| `-h, --help` | Show help | - |
+| Flag               | Description                    | Default |
+| ------------------ | ------------------------------ | ------- |
+| `-c, --chunk-size` | Chunk size in seconds          | 60      |
+| `-f, --format`     | Output format: text, json, vtt | text    |
+| `-o, --output`     | Output file (default: stdout)  | -       |
+| `--version`        | Show version                   | -       |
+| `-h, --help`       | Show help                      | -       |
 
 ## Environment
 
@@ -89,22 +89,22 @@ Models are automatically downloaded to `$XDG_CACHE_HOME/chough/models` (~650MB).
 
 Benchmark on 1-minute audio file (AMD Ryzen 5 5600X, 6 cores):
 
-| Tool | Model | Time | Relative | Realtime Factor | Memory |
-|------|-------|------|----------|-----------------|--------|
-| **chough** | Parakeet TDT 0.6b V3 | **4.3s** | **13.2x** | **14.1x** | **1.6GB** |
-| whisper-ctranslate2 | medium | 27.8s | 2.0x | 2.2x | 1.7GB |
-| whisper | turbo | 56.6s | 1.0x | 1.1x | 5.3GB |
+| Tool                | Model                | Time     | Relative  | Realtime Factor | Memory    |
+| ------------------- | -------------------- | -------- | --------- | --------------- | --------- |
+| **chough**          | Parakeet TDT 0.6b V3 | **4.3s** | **13.2x** | **14.1x**       | **1.6GB** |
+| whisper-ctranslate2 | medium               | 27.8s    | 2.0x      | 2.2x            | 1.7GB     |
+| whisper             | turbo                | 56.6s    | 1.0x      | 1.1x            | 5.3GB     |
 
 **chough is ~6-13x faster** than other tools.
 
 ### Speed by audio length
 
-| Duration | Time | Speed |
-|----------|------|-------|
-| 15s | 2.0s | **7.4x realtime** |
-| 1min | 4.3s | **14.1x realtime** |
-| 5min | 16.2s | **18.5x realtime** |
-| 30min | 90.2s | **19.9x realtime** |
+| Duration | Time  | Speed              |
+| -------- | ----- | ------------------ |
+| 15s      | 2.0s  | **7.4x realtime**  |
+| 1min     | 4.3s  | **14.1x realtime** |
+| 5min     | 16.2s | **18.5x realtime** |
+| 30min    | 90.2s | **19.9x realtime** |
 
 Run your own benchmarks: `just benchmark <audio-file>`
 
