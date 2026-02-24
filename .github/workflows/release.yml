@@ -127,6 +127,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: chough-*
           merge-multiple: true
 
       - name: Create checksums
