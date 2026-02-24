@@ -20,6 +20,7 @@ const (
 	reset   = "\033[0m"
 	bold    = "\033[1m"
 	dim     = "\033[2m"
+	red     = "\033[31m"
 	green   = "\033[32m"
 	yellow  = "\033[33m"
 	blue    = "\033[34m"
@@ -27,6 +28,19 @@ const (
 	cyan    = "\033[36m"
 	white   = "\033[37m"
 )
+
+// renderProgressBar creates a visual progress bar
+func renderProgressBar(current, total, width int) string {
+	if total == 0 {
+		return ""
+	}
+	filled := (current * width) / total
+	if filled > width {
+		filled = width
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	return fmt.Sprintf("[%s%s%s]", green, bar, reset)
+}
 
 // ChunkResult holds transcription result for a single chunk
 type ChunkResult struct {
@@ -95,9 +109,10 @@ func main() {
 	}
 
 	// Load model (auto-download if needed)
-	fmt.Fprintln(os.Stderr, "Loading model...")
+	fmt.Fprint(os.Stderr, "\033[?25l⏳ Loading model...\r")
 	modelPath, err := models.GetModelPath()
 	if err != nil {
+		fmt.Fprintln(os.Stderr)
 		fmt.Fprintf(os.Stderr, "Failed to get model: %v\n", err)
 		os.Exit(1)
 	}
@@ -111,11 +126,12 @@ func main() {
 
 	recognizer, err := asr.NewRecognizer(&config)
 	if err != nil {
+		fmt.Fprintln(os.Stderr)
 		fmt.Fprintf(os.Stderr, "Failed to load model: %v\n", err)
 		os.Exit(1)
 	}
 	defer recognizer.Close()
-	fmt.Fprintln(os.Stderr, "Model loaded!")
+	fmt.Fprintf(os.Stderr, "\r\033[?25h✅ Model loaded!   \n")
 
 	// Get audio duration
 	duration, err := getDuration(audioFile)
@@ -136,11 +152,15 @@ func main() {
 	}
 	boundaries = append(boundaries, duration)
 
-	fmt.Fprintf(os.Stderr, "Audio: %.1fs, chunks: %ds, format: %s\n", duration, chunkSecs, outputFormat)
+	fmt.Fprintf(os.Stderr, "audio: %.1fs %s•%s chunks: %ds %s•%s format: %s\n",
+		duration, dim, reset, chunkSecs, dim, reset, outputFormat)
 
 	// Process chunks
 	startTime := time.Now()
 	var results []ChunkResult
+
+	// Hide cursor during progress
+	fmt.Fprint(os.Stderr, "\033[?25l")
 
 	for i := 0; i < len(boundaries)-1; i++ {
 		chunkStart := boundaries[i]
@@ -150,11 +170,17 @@ func main() {
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "Chunk %d/%d (%.1fs-%.1fs)... ", i+1, len(boundaries)-1, chunkStart, chunkEnd)
+		// Progress bar: [████░░░░░░] 2/5
+		progress := renderProgressBar(i+1, len(boundaries)-1, 20)
+		fmt.Fprintf(os.Stderr, "\r%s %sProcessing %s%d/%d%s%s",
+			progress, dim, cyan, i+1, len(boundaries)-1, reset, reset)
 
 		result, err := transcribeChunk(recognizer, audioFile, chunkStart, chunkEnd-chunkStart)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "ERR: %v\n", err)
+			// Show cursor on error
+			fmt.Fprint(os.Stderr, "\033[?25h")
+			fmt.Fprintf(os.Stderr, "\r%s %sChunk %d/%d ERR: %v%s\n",
+				renderProgressBar(i+1, len(boundaries)-1, 20), red, i+1, len(boundaries)-1, err, reset)
 			continue
 		}
 
@@ -167,12 +193,21 @@ func main() {
 			Timestamps: result.Timestamps,
 			Tokens:     result.Tokens,
 		})
-
-		fmt.Fprintf(os.Stderr, "OK (%d chars)\n", len(result.Text))
 	}
 
+	// Final progress bar at 100% - show cursor
+	fmt.Fprintf(os.Stderr, "\r\033[?25h%s %sDone!%s\033[K\n",
+		renderProgressBar(len(boundaries)-1, len(boundaries)-1, 20), green, reset)
+
 	elapsed := time.Since(startTime)
-	fmt.Fprintf(os.Stderr, "\nDone in %v (%.1fx realtime)\n", elapsed, duration/elapsed.Seconds())
+	rtFactor := duration / elapsed.Seconds()
+	rtColor := green
+	if rtFactor < 10 {
+		rtColor = yellow
+	}
+
+	fmt.Fprintf(os.Stderr, "%s⚡%s Processed in %s%.1fs%s %s(%s%.1fx%s realtime)%s\n\n",
+		yellow, reset, bold, elapsed.Seconds(), reset, dim, rtColor, rtFactor, reset, reset)
 
 	// Determine output destination
 	var out *os.File
