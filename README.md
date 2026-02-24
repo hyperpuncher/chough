@@ -1,6 +1,6 @@
 # 🐦‍⬛ chough
 
-Fast, memory-efficient ASR CLI using Parakeet TDT 0.6b V3 via sherpa-onnx with chunked processing.
+*pronounced "chuff" /tʃʌf/* — a fast, memory-efficient ASR CLI using [Parakeet TDT 0.6b V3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with chunked processing.
 
 ## Features
 
@@ -12,36 +12,35 @@ Fast, memory-efficient ASR CLI using Parakeet TDT 0.6b V3 via sherpa-onnx with c
 
 ## Installation
 
-### Binary releases (recommended)
-
-Download from [GitHub Releases](https://github.com/hyperpuncher/chough/releases):
+### Arch Linux (AUR)
 
 ```bash
-# Linux AMD64
-curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough_${VERSION}_Linux_x86_64.tar.gz | tar xz
-sudo mv chough /usr/local/bin/
-
-# macOS Intel
-curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough_${VERSION}_Darwin_x86_64.tar.gz | tar xz
-sudo mv chough /usr/local/bin/
-
-# macOS Apple Silicon  
-curl -L https://github.com/hyperpuncher/chough/releases/latest/download/chough_${VERSION}_Darwin_arm64.tar.gz | tar xz
-sudo mv chough /usr/local/bin/
+yay -S chough
+# or
+paru -S chough
 ```
+
+### macOS (Homebrew)
+
+```bash
+brew install hyperpuncher/tap/chough
+```
+
+### Windows (Winget)
+
+```bash
+winget install hyperpuncher.chough
+```
+
+### Binary releases
+
+Download from [GitHub Releases](https://github.com/hyperpuncher/chough/releases).
 
 ### Build from source
 
 ```bash
 go install github.com/hyperpuncher/chough/cmd/chough@latest
 ```
-
-<!-- ### Homebrew (coming soon)
-
-```bash
-brew tap hyperpuncher/chough
-brew install chough
-``` -->
 
 ## Usage
 
@@ -75,7 +74,7 @@ chough -c 30 long-interview.wav
 
 ## Model
 
-Default model: `sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2`
+Default: [Parakeet TDT 0.6b V3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) (`sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2`)
 
 Models are automatically downloaded to `$XDG_CACHE_HOME/chough/models` (~650MB).
 
