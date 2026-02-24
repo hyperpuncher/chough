@@ -127,18 +127,19 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ./artifacts
           merge-multiple: true
 
       - name: Create checksums
         run: |
-          cd ./artifacts
           sha256sum chough_${GITHUB_REF_NAME}_*.tar.gz chough_${GITHUB_REF_NAME}_*.zip > checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./artifacts/*
+          files: |
+            chough_${GITHUB_REF_NAME}_*.tar.gz
+            chough_${GITHUB_REF_NAME}_*.zip
+            checksums.txt
           generate_release_notes: true
           draft: false
           prerelease: false
