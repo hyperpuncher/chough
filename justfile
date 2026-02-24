@@ -94,42 +94,8 @@ help:
     @just --list
 
 # Benchmark against whisper (requires hyperfine)
-benchmark AUDIO_FILE="test/audio/audio-5min.wav":
-    @echo "Installing hyperfine if needed..."
+benchmark AUDIO_FILE="test/audio/audio-1min.wav":
     @command -v hyperfine >/dev/null 2>&1 || (echo "Install hyperfine: cargo install hyperfine" && exit 1)
-    ./benchmarks/benchmark-hyperfine.sh {{AUDIO_FILE}}
-
-# Quick benchmark (single run, no hyperfine)
-benchmark-quick AUDIO_FILE="test/audio/audio-5min.wav":
-    #!/usr/bin/env bash
-    echo "Quick benchmark: chough vs whisper"
-    echo "=================================="
-    
-    # Get duration
-    DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "{{AUDIO_FILE}}" 2>/dev/null | cut -d. -f1)
-    echo "Audio: $(basename "{{AUDIO_FILE}}") (${DURATION}s)"
-    echo ""
-    
-    # chough
-    echo "chough (Parakeet TDT 0.6b):"
-    time ./dist/chough -f text "{{AUDIO_FILE}}" 2>/dev/null | tail -1
-    echo ""
-    
-    # whisper-ctranslate2 if available
-    if command -v whisper-ctranslate2 >/dev/null 2>&1 || command -v uvx >/dev/null 2>&1; then
-        echo "whisper-ctranslate2 (medium):"
-        time uvx whisper-ctranslate2 --model=medium --output_format=txt "{{AUDIO_FILE}}" --output_dir=/tmp 2>/dev/null | tail -1 || true
-        echo ""
-    fi
-    
-    # whisper if available  
-    if command -v whisper >/dev/null 2>&1; then
-        echo "whisper (turbo):"
-        time whisper --model=turbo --output_format=txt "{{AUDIO_FILE}}" --output_dir=/tmp 2>/dev/null | tail -1 || true
-    fi
-
-# Memory profiling with /usr/bin/time
-profile-mem AUDIO_FILE="test/audio/audio-5min.wav":
-    @echo "Memory profile: chough"
-    /usr/bin/time -v ./dist/chough -f text "{{AUDIO_FILE}}" 2>&1 | tail -20
+    @echo "Benchmarking with hyperfine..."
+    ./benchmarks/benchmark.sh {{AUDIO_FILE}}
 
