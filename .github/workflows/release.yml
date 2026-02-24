@@ -68,6 +68,7 @@ jobs:
         if: matrix.arch == 'amd64'
         run: |
           export GOARCH=amd64
+          export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-amd64 ./cmd/chough
           tar czf chough_${GITHUB_REF_NAME}_Darwin_x86_64.tar.gz chough-darwin-amd64
 
@@ -75,6 +76,7 @@ jobs:
         if: matrix.arch == 'arm64'
         run: |
           export GOARCH=arm64
+          export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-arm64 ./cmd/chough
           tar czf chough_${GITHUB_REF_NAME}_Darwin_arm64.tar.gz chough-darwin-arm64
 
