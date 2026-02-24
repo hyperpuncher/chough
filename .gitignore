@@ -1,0 +1,54 @@
+# Binaries
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories (remove when vendoring)
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Models (large files)
+sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/
+*.onnx
+*.bin
+
+# Test audio files
+test/audio/
+*.wav
+*.mp3
+*.flac
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Sherpa-ONNX binaries (platform specific)
+sherpa-onnx-*/
+
+# Development files (not committed)
+todo.md
