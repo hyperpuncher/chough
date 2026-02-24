@@ -148,6 +148,5 @@ jobs:
             chough_*.tar.gz
             chough_*.zip
             checksums.txt
-          generate_release_notes: true
           draft: false
           prerelease: false
