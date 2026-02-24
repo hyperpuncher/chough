@@ -43,6 +43,8 @@ func main() {
 	flag.IntVar(chunkSize, "chunk-size", 30, "chunk size in seconds")
 	format := flag.String("f", "text", "output format (text, json, vtt)")
 	flag.StringVar(format, "format", "text", "output format (text, json, vtt)")
+	outputFile := flag.String("o", "", "output file (default: stdout)")
+	flag.StringVar(outputFile, "output", "", "output file (default: stdout)")
 
 	// Pretty usage message
 	flag.Usage = func() {
@@ -53,12 +55,14 @@ func main() {
 			cyan, reset, yellow, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "  %s-f, --format%s %sstring%s    output format: text, json, vtt %s(default: text)%s\n",
 			cyan, reset, yellow, reset, dim, reset)
+		fmt.Fprintf(os.Stderr, "  %s-o, --output%s %sfile%s      output file %s(default: stdout)%s\n",
+			cyan, reset, yellow, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "\n%sExamples:%s\n", bold, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough audio.mp3 %s# plain text output%s\n",
+		fmt.Fprintf(os.Stderr, "  %s$%s chough audio.mp3 %s# plain text to stdout%s\n",
 			green, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough -f vtt audio.mp3 %s# WebVTT subtitles%s\n",
+		fmt.Fprintf(os.Stderr, "  %s$%s chough -f vtt -o out.vtt audio.mp3 %s# WebVTT to file%s\n",
 			green, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough --format json talk.mp3 %s# JSON with metadata%s\n",
+		fmt.Fprintf(os.Stderr, "  %s$%s chough --format json talk.mp3 %s# JSON to stdout%s\n",
 			green, reset, dim, reset)
 		fmt.Fprintf(os.Stderr, "\n%sEnvironment:%s\n", bold, reset)
 		fmt.Fprintf(os.Stderr, "  %sCHOUGH_MODEL%s    path to model directory %s(required)%s\n",
@@ -149,18 +153,32 @@ func main() {
 	elapsed := time.Since(startTime)
 	fmt.Fprintf(os.Stderr, "\nDone in %v (%.1fx realtime)\n", elapsed, duration/elapsed.Seconds())
 
+	// Determine output destination
+	var out *os.File
+	if *outputFile != "" {
+		out, err = os.Create(*outputFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
+			os.Exit(1)
+		}
+		defer out.Close()
+		fmt.Fprintf(os.Stderr, "Output: %s\n", *outputFile)
+	} else {
+		out = os.Stdout
+	}
+
 	// Output in requested format
 	switch outputFormat {
 	case "json":
-		outputJSON(results, duration, elapsed)
+		outputJSON(out, results, duration, elapsed)
 	case "vtt":
-		outputVTT(results)
+		outputVTT(out, results)
 	default:
-		outputText(results)
+		outputText(out, results)
 	}
 }
 
-func outputText(results []ChunkResult) {
+func outputText(out *os.File, results []ChunkResult) {
 	var b strings.Builder
 	for i, r := range results {
 		if i > 0 {
@@ -168,10 +186,10 @@ func outputText(results []ChunkResult) {
 		}
 		b.WriteString(r.Text)
 	}
-	fmt.Println(b.String())
+	fmt.Fprintln(out, b.String())
 }
 
-func outputJSON(results []ChunkResult, duration float64, elapsed time.Duration) {
+func outputJSON(out *os.File, results []ChunkResult, duration float64, elapsed time.Duration) {
 	type Output struct {
 		Duration  float64       `json:"duration_seconds"`
 		Chunks    int           `json:"chunks"`
@@ -187,21 +205,21 @@ func outputJSON(results []ChunkResult, duration float64, elapsed time.Duration) 
 		fullText.WriteString(r.Text)
 	}
 
-	out := Output{
+	data := Output{
 		Duration:  duration,
 		Chunks:    len(results),
 		Text:      fullText.String(),
 		ChunkData: results,
 	}
 
-	enc := json.NewEncoder(os.Stdout)
+	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
-	enc.Encode(out)
+	enc.Encode(data)
 }
 
-func outputVTT(results []ChunkResult) {
-	fmt.Println("WEBVTT")
-	fmt.Println()
+func outputVTT(out *os.File, results []ChunkResult) {
+	fmt.Fprintln(out, "WEBVTT")
+	fmt.Fprintln(out)
 
 	cueNum := 1
 	for _, r := range results {
@@ -218,10 +236,10 @@ func outputVTT(results []ChunkResult) {
 				continue
 			}
 
-			fmt.Printf("%d\n", cueNum)
-			fmt.Printf("%s --> %s\n", formatVTTTime(start), formatVTTTime(end))
-			fmt.Println(cue.Text)
-			fmt.Println()
+			fmt.Fprintf(out, "%d\n", cueNum)
+			fmt.Fprintf(out, "%s --> %s\n", formatVTTTime(start), formatVTTTime(end))
+			fmt.Fprintln(out, cue.Text)
+			fmt.Fprintln(out)
 
 			cueNum++
 		}
