@@ -4,7 +4,7 @@
 
 ## Features
 
-- ⚡ **Fast**: 20-24x realtime transcription
+- ⚡ **Fast**: 7-20x realtime transcription
 - 🧠 **Memory-efficient**: Processes audio in chunks
 - 📦 **Any audio format**: mp3, wav, m4a, ogg, flac, etc. (via ffmpeg)
 - 🎯 **No setup**: Auto-downloads models on first run
@@ -87,24 +87,24 @@ Models are automatically downloaded to `$XDG_CACHE_HOME/chough/models` (~650MB).
 
 ## Performance
 
-Benchmark on 1-minute audio file (AMD Ryzen, 8 cores):
+Benchmark on 1-minute audio file (AMD Ryzen 5 5600X, 6 cores):
 
-| Tool | Model | Time | Realtime Factor | Memory |
-|------|-------|------|-----------------|--------|
-| **chough** | Parakeet TDT 0.6b V3 | **~3s** | **~20x** | **~500MB** |
-| whisper-ctranslate2 | medium | ~30s | ~2x | ~2-3GB |
-| whisper | turbo | ~60s | ~1x | ~1.5GB |
+| Tool | Model | Time | Relative | Realtime Factor | Memory |
+|------|-------|------|----------|-----------------|--------|
+| **chough** | Parakeet TDT 0.6b V3 | **4.3s** | **13.2x** | **14.1x** | **1.6GB** |
+| whisper-ctranslate2 | medium | 27.8s | 2.0x | 2.2x | 1.7GB |
+| whisper | turbo | 56.6s | 1.0x | 1.1x | 5.3GB |
 
-**chough is ~10-20x faster** than other tools while using **3-6x less memory**.
+**chough is ~6-13x faster** than other tools.
 
 ### Speed by audio length
 
-| Duration | chough | Typical Speed |
-|----------|--------|---------------|
-| 15s | 0.6s | **24x realtime** |
-| 1min | 3s | **20x realtime** |
-| 5min | 15s | **20x realtime** |
-| 1hour | ~3min | **20x realtime** |
+| Duration | Time | Speed |
+|----------|------|-------|
+| 15s | 2.0s | **7.4x realtime** |
+| 1min | 4.3s | **14.1x realtime** |
+| 5min | 16.2s | **18.5x realtime** |
+| 30min | 90.2s | **19.9x realtime** |
 
 Run your own benchmarks: `just benchmark <audio-file>`
 
