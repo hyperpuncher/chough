@@ -27,7 +27,8 @@ paru -S chough
 ### macOS (Homebrew)
 
 ```bash
-brew install hyperpuncher/tap/chough
+brew tap hyperpuncher/chough https://github.com/hyperpuncher/chough
+brew install chough
 ```
 
 ### Windows (Winget)
