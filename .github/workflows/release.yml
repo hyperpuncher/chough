@@ -50,7 +50,16 @@ jobs:
           export GOARCH=amd64
           export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-amd64 ./cmd/chough
-          tar czf chough_${GITHUB_REF_NAME}_darwin_x86_64.tar.gz chough-darwin-amd64
+          
+          # Bundle dylibs
+          modPath=$(go env GOMODCACHE)
+          dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@v1.12.26/lib/x86_64-apple-darwin"
+          cp "${dylibPath}/libsherpa-onnx-c-api.dylib" .
+          
+          # Fix rpath to look in same directory
+          install_name_tool -change "@rpath/libsherpa-onnx-c-api.dylib" "@loader_path/libsherpa-onnx-c-api.dylib" chough-darwin-amd64
+          
+          tar czf chough_${GITHUB_REF_NAME}_darwin_x86_64.tar.gz chough-darwin-amd64 *.dylib
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -75,7 +84,16 @@ jobs:
           export GOARCH=arm64
           export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-arm64 ./cmd/chough
-          tar czf chough_${GITHUB_REF_NAME}_darwin_arm64.tar.gz chough-darwin-arm64
+          
+          # Bundle dylibs
+          modPath=$(go env GOMODCACHE)
+          dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@v1.12.26/lib/aarch64-apple-darwin"
+          cp "${dylibPath}/libsherpa-onnx-c-api.dylib" .
+          
+          # Fix rpath to look in same directory
+          install_name_tool -change "@rpath/libsherpa-onnx-c-api.dylib" "@loader_path/libsherpa-onnx-c-api.dylib" chough-darwin-arm64
+          
+          tar czf chough_${GITHUB_REF_NAME}_darwin_arm64.tar.gz chough-darwin-arm64 *.dylib
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
