@@ -7,16 +7,16 @@ class Chough < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_darwin_arm64.tar.gz"
-      sha256 :no_check
+      sha256 "8076b5504103853f66d5a8d0907edcfc624d7c306b9a924bba8fa65f1e97fda5"
     else
       url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_darwin_x86_64.tar.gz"
-      sha256 :no_check
+      sha256 "b89cfe033e8aee20f2bbe4c8d5139ed209ad6e0cf5729f1be1e1ebaf5c74b859"
     end
   end
 
   on_linux do
     url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_linux_x86_64.tar.gz"
-    sha256 :no_check
+    sha256 "7291e42e043bf8cd5a21551434c11537615eec0cd883bf685fcfa069eec6331c"
   end
 
   def install

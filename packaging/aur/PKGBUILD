@@ -1,26 +1,35 @@
 # Maintainer: hyperpuncher
 pkgname=chough
-pkgver=0.1.3
+pkgver=0.1.4
 pkgrel=1
-pkgdesc="Fast ASR CLI using Parakeet TDT 0.6b V3"
+pkgdesc="Fast ASR CLI using Parakeet TDT 0.6b V3 - build from source"
 arch=('x86_64')
 url="https://github.com/hyperpuncher/chough"
 license=('MIT')
-depends=('ffmpeg' 'patchelf')
-makedepends=('go')
+depends=('ffmpeg')
+makedepends=('go' 'patchelf')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/hyperpuncher/chough/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
     cd "$pkgname-$pkgver"
     export CGO_ENABLED=1
-    go build -ldflags="-s -w -X main.version=v$pkgver" -o chough ./cmd/chough
     
-    # Bundle .so files
+    # Go needs specific LDFLAGS format - override system defaults
+    # Only use flags compatible with Go's external linker
+    export CGO_LDFLAGS="-Wl,-z,relro,-z,now"
+    
+    go build -ldflags="-s -w -X main.version=v$pkgver -linkmode=external" -buildmode=pie -o chough ./cmd/chough
+    
+    # Bundle .so files (copy first, then strip - can't strip from read-only module cache)
     modPath=$(go env GOMODCACHE)
-    SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go ' go.mod | awk '{print $2}')
-    soPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-linux@${SHERPA_VERSION}/lib/x86_64-linux-gnu"
+    SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go-linux ' go.mod | awk '{print $2}')
+    soPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-linux@${SHERPA_VERSION}/lib/${CARCH}-unknown-linux-gnu"
     cp "${soPath}"/*.so .
+    
+    # Strip .so files to remove debug symbols
+    chmod +w *.so
+    strip --strip-unneeded *.so
     
     # Fix rpath to look in lib dir
     patchelf --set-rpath '$ORIGIN/../lib/chough' chough

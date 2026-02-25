@@ -1,0 +1,22 @@
+# Maintainer: hyperpuncher
+pkgname=chough-bin
+pkgver=0.1.4
+pkgrel=1
+pkgdesc="Fast ASR CLI using Parakeet TDT 0.6b V3 - pre-built binary"
+arch=('x86_64')
+url="https://github.com/hyperpuncher/chough"
+license=('MIT')
+depends=('ffmpeg')
+provides=('chough')
+conflicts=('chough')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/hyperpuncher/chough/releases/download/v$pkgver/chough_v${pkgver}_linux_x86_64.tar.gz")
+sha256sums=('7291e42e043bf8cd5a21551434c11537615eec0cd883bf685fcfa069eec6331c')
+
+package() {
+    install -Dm755 chough-linux-amd64 "$pkgdir/usr/bin/chough"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE" 2>/dev/null || true
+    
+    # Install .so files to /usr/lib/chough/
+    install -d "$pkgdir/usr/lib/chough"
+    install -Dm644 *.so "$pkgdir/usr/lib/chough/"
+}
