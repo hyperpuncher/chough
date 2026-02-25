@@ -51,13 +51,22 @@ jobs:
           export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-amd64 ./cmd/chough
           
-          # Bundle dylibs
+          # Bundle ALL dylibs
           modPath=$(go env GOMODCACHE)
           dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@v1.12.26/lib/x86_64-apple-darwin"
-          cp "${dylibPath}/libsherpa-onnx-c-api.dylib" .
+          cp "${dylibPath}"/*.dylib .
           
-          # Fix rpath to look in same directory
-          install_name_tool -change "@rpath/libsherpa-onnx-c-api.dylib" "@loader_path/libsherpa-onnx-c-api.dylib" chough-darwin-amd64
+          # Fix rpath for binary - change all @rpath to @loader_path
+          for lib in *.dylib; do
+            install_name_tool -change "@rpath/${lib}" "@loader_path/${lib}" chough-darwin-amd64 2>/dev/null || true
+          done
+          
+          # Fix rpath for dylibs themselves (they reference each other)
+          for lib in *.dylib; do
+            for dep in *.dylib; do
+              install_name_tool -change "@rpath/${dep}" "@loader_path/${dep}" "${lib}" 2>/dev/null || true
+            done
+          done
           
           tar czf chough_${GITHUB_REF_NAME}_darwin_x86_64.tar.gz chough-darwin-amd64 *.dylib
 
@@ -85,13 +94,22 @@ jobs:
           export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-arm64 ./cmd/chough
           
-          # Bundle dylibs
+          # Bundle ALL dylibs
           modPath=$(go env GOMODCACHE)
           dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@v1.12.26/lib/aarch64-apple-darwin"
-          cp "${dylibPath}/libsherpa-onnx-c-api.dylib" .
+          cp "${dylibPath}"/*.dylib .
           
-          # Fix rpath to look in same directory
-          install_name_tool -change "@rpath/libsherpa-onnx-c-api.dylib" "@loader_path/libsherpa-onnx-c-api.dylib" chough-darwin-arm64
+          # Fix rpath for binary - change all @rpath to @loader_path
+          for lib in *.dylib; do
+            install_name_tool -change "@rpath/${lib}" "@loader_path/${lib}" chough-darwin-arm64 2>/dev/null || true
+          done
+          
+          # Fix rpath for dylibs themselves (they reference each other)
+          for lib in *.dylib; do
+            for dep in *.dylib; do
+              install_name_tool -change "@rpath/${dep}" "@loader_path/${dep}" "${lib}" 2>/dev/null || true
+            done
+          done
           
           tar czf chough_${GITHUB_REF_NAME}_darwin_arm64.tar.gz chough-darwin-arm64 *.dylib
 
