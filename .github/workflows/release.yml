@@ -23,6 +23,9 @@ jobs:
 
       - name: Build AMD64
         run: |
+          # Download all modules first
+          go mod download
+          
           # Get sherpa-onnx-linux version from go.mod
           SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go-linux ' go.mod | awk '{print $2}')
           
@@ -30,7 +33,7 @@ jobs:
           
           # Bundle .so files
           modPath=$(go env GOMODCACHE)
-          soPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-linux@${SHERPA_VERSION}/lib/x86_64-linux-gnu"
+          soPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-linux@${SHERPA_VERSION}/lib/x86_64-unknown-linux-gnu"
           cp "${soPath}"/*.so .
           
           # Fix rpath to look in same directory
