@@ -23,8 +23,20 @@ jobs:
 
       - name: Build AMD64
         run: |
+          # Get sherpa-onnx version from go.mod
+          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go ' go.mod | awk '{print $2}')
+          
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-amd64 ./cmd/chough
-          tar czf chough_${GITHUB_REF_NAME}_linux_x86_64.tar.gz chough-linux-amd64
+          
+          # Bundle .so files
+          modPath=$(go env GOMODCACHE)
+          soPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-linux@${SHERPA_VERSION}/lib/x86_64-linux-gnu"
+          cp "${soPath}"/*.so .
+          
+          # Fix rpath to look in same directory
+          patchelf --set-rpath '$ORIGIN' chough-linux-amd64
+          
+          tar czf chough_${GITHUB_REF_NAME}_linux_x86_64.tar.gz chough-linux-amd64 *.so
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -47,13 +59,16 @@ jobs:
 
       - name: Build
         run: |
+          # Get sherpa-onnx version from go.mod
+          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go ' go.mod | awk '{print $2}')
+          
           export GOARCH=amd64
           export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-amd64 ./cmd/chough
           
           # Bundle ALL dylibs
           modPath=$(go env GOMODCACHE)
-          dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@v1.12.26/lib/x86_64-apple-darwin"
+          dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@${SHERPA_VERSION}/lib/x86_64-apple-darwin"
           cp "${dylibPath}"/*.dylib .
           
           # Fix rpath for binary - change all @rpath to @loader_path
@@ -90,13 +105,16 @@ jobs:
 
       - name: Build ARM64
         run: |
+          # Get sherpa-onnx version from go.mod
+          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go ' go.mod | awk '{print $2}')
+          
           export GOARCH=arm64
           export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-arm64 ./cmd/chough
           
           # Bundle ALL dylibs
           modPath=$(go env GOMODCACHE)
-          dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@v1.12.26/lib/aarch64-apple-darwin"
+          dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@${SHERPA_VERSION}/lib/aarch64-apple-darwin"
           cp "${dylibPath}"/*.dylib .
           
           # Fix rpath for binary - change all @rpath to @loader_path
@@ -134,11 +152,15 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
+          # Get sherpa-onnx version from go.mod
+          $goModContent = Get-Content go.mod -Raw
+          $sherpaVersion = ($goModContent | Select-String 'github.com/k2-fsa/sherpa-onnx-go\s+(\S+)').Matches.Groups[1].Value
+          
           go build -ldflags="-s -w -X main.version=${env:GITHUB_REF_NAME}" -o chough-windows-amd64.exe ./cmd/chough
           
           # Copy required DLLs from Go module cache
           $modPath = go env GOMODCACHE
-          $dllPath = Join-Path $modPath "github.com/k2-fsa/sherpa-onnx-go-windows@v1.12.26\lib\x86_64-pc-windows-gnu"
+          $dllPath = Join-Path $modPath "github.com/k2-fsa/sherpa-onnx-go-windows@${sherpaVersion}\lib\x86_64-pc-windows-gnu"
           Copy-Item (Join-Path $dllPath "sherpa-onnx-c-api.dll") .
           Copy-Item (Join-Path $dllPath "onnxruntime.dll") .
           Copy-Item (Join-Path $dllPath "sherpa-onnx-cxx-api.dll") .
