@@ -33,7 +33,7 @@ jobs:
         if: matrix.arch == 'amd64'
         run: |
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-amd64 ./cmd/chough
-          tar czf chough_${GITHUB_REF_NAME}_Linux_x86_64.tar.gz chough-linux-amd64
+          tar czf chough_${GITHUB_REF_NAME}_linux_x86_64.tar.gz chough-linux-amd64
 
       - name: Build ARM64
         if: matrix.arch == 'arm64'
@@ -43,14 +43,14 @@ jobs:
           export CGO_ENABLED=1
           export GOARCH=arm64
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-arm64 ./cmd/chough
-          tar czf chough_${GITHUB_REF_NAME}_Linux_arm64.tar.gz chough-linux-arm64
+          tar czf chough_${GITHUB_REF_NAME}_linux_arm64.tar.gz chough-linux-arm64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: chough-linux-${{ matrix.arch }}
           path: |
-            chough_*_Linux_*.tar.gz
+            chough_*_linux_*.tar.gz
 
   build-macos-amd64:
     runs-on: macos-15-intel  # Intel runner (x64)
@@ -69,13 +69,13 @@ jobs:
           export GOARCH=amd64
           export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-amd64 ./cmd/chough
-          tar czf chough_${GITHUB_REF_NAME}_Darwin_x86_64.tar.gz chough-darwin-amd64
+          tar czf chough_${GITHUB_REF_NAME}_darwin_x86_64.tar.gz chough-darwin-amd64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: chough-darwin-amd64
-          path: chough_*_Darwin_x86_64.tar.gz
+          path: chough_*_darwin_x86_64.tar.gz
 
   build-macos-arm64:
     runs-on: macos-latest  # Apple Silicon runner
@@ -94,13 +94,13 @@ jobs:
           export GOARCH=arm64
           export CGO_ENABLED=1
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-arm64 ./cmd/chough
-          tar czf chough_${GITHUB_REF_NAME}_Darwin_arm64.tar.gz chough-darwin-arm64
+          tar czf chough_${GITHUB_REF_NAME}_darwin_arm64.tar.gz chough-darwin-arm64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: chough-darwin-arm64
-          path: chough_*_Darwin_arm64.tar.gz
+          path: chough_*_darwin_arm64.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -126,13 +126,13 @@ jobs:
           Copy-Item (Join-Path $dllPath "onnxruntime.dll") .
           Copy-Item (Join-Path $dllPath "sherpa-onnx-cxx-api.dll") .
           
-          Compress-Archive -Path chough-windows-amd64.exe, *.dll -DestinationPath chough_${env:GITHUB_REF_NAME}_Windows_x86_64.zip
+          Compress-Archive -Path chough-windows-amd64.exe, *.dll -DestinationPath chough_${env:GITHUB_REF_NAME}_windows_x86_64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: chough-windows-amd64
-          path: chough_*_Windows_x86_64.zip
+          path: chough_*_windows_x86_64.zip
 
   release:
     needs: [build-linux, build-macos-amd64, build-macos-arm64, build-windows]
