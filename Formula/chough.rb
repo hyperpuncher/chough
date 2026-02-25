@@ -4,6 +4,8 @@ class Chough < Formula
   version "0.1.4"
   license "MIT"
 
+  depends_on "ffmpeg"
+
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_darwin_arm64.tar.gz"
@@ -14,22 +16,30 @@ class Chough < Formula
     end
   end
 
-  on_linux do
-    url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_linux_x86_64.tar.gz"
-    sha256 "7291e42e043bf8cd5a21551434c11537615eec0cd883bf685fcfa069eec6331c"
+  def install
+    bin.install Dir["chough*"].first => "chough"
+    lib.install Dir["*.dylib"] if OS.mac?
+
+    # Fix dylib references in the binary
+    fix_dylib_references if OS.mac?
   end
 
-  def install
-    bin.install "chough-darwin-amd64" => "chough" if OS.mac? && Hardware::CPU.intel?
-    bin.install "chough-darwin-arm64" => "chough" if OS.mac? && Hardware::CPU.arm?
-    bin.install "chough-linux-amd64" => "chough" if OS.linux?
+  def fix_dylib_references
+    dylibs = Dir["#{lib}/*.dylib"].map { |f| File.basename(f) }
 
-    # Install libs on macOS and Linux
-    if OS.mac?
-      lib.install Dir["*.dylib"]
-    elsif OS.linux?
-      lib.install Dir["*.so"]
+    dylibs.each do |dylib|
+      # Change from @loader_path to @rpath so it can find dylibs in lib/
+      MachO::Tools.change_install_name(
+        bin/"chough",
+        "@loader_path/#{dylib}",
+        "@rpath/#{dylib}",
+      )
+    rescue MachO::MachOError
+      # Not found, skip
     end
+
+    # Add rpath to the lib directory
+    MachO::Tools.add_rpath(bin/"chough", opt_lib.to_s)
   end
 
   test do
