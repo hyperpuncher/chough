@@ -24,10 +24,8 @@ const (
 	red     = "\033[31m"
 	green   = "\033[32m"
 	yellow  = "\033[33m"
-	blue    = "\033[34m"
 	magenta = "\033[35m"
 	cyan    = "\033[36m"
-	white   = "\033[37m"
 )
 
 // renderProgressBar creates a visual progress bar
@@ -58,7 +56,6 @@ func formatETA(d time.Duration) string {
 
 // ChunkResult holds transcription result for a single chunk
 type ChunkResult struct {
-	Index      int
 	StartTime  float64
 	EndTime    float64
 	Text       string
@@ -213,7 +210,6 @@ func main() {
 
 		// Store result with timing
 		results = append(results, ChunkResult{
-			Index:      i,
 			StartTime:  chunkStart,
 			EndTime:    chunkEnd,
 			Text:       result.Text,
