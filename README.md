@@ -10,6 +10,10 @@ _pronounced "chuff" /tʃʌf/_ — a fast, memory-efficient ASR CLI using [Parake
 - 🎯 **No setup**: Auto-downloads models on first run
 - 📝 **Multiple formats**: text, json, vtt
 
+## Requirements
+
+- `ffmpeg` - for audio/video support
+
 ## Installation
 
 ### Arch Linux (AUR)
