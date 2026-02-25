@@ -6,7 +6,7 @@ _pronounced "chuff" /tʃʌf/_ — a fast, memory-efficient ASR CLI using [Parake
 
 - ⚡ **Fast**: 7-20x realtime transcription
 - 🧠 **Memory-efficient**: Processes audio in chunks
-- 📦 **Any audio format**: mp3, wav, m4a, ogg, flac, etc. (via ffmpeg)
+- 📦 **Any format**: If ffmpeg supports it, chough supports it
 - 🎯 **No setup**: Auto-downloads models on first run
 - 📝 **Multiple formats**: text, json, vtt
 
@@ -48,8 +48,8 @@ go install github.com/hyperpuncher/chough/cmd/chough@latest
 # Basic transcription (text to stdout)
 chough audio.mp3
 
-# WebVTT subtitles
-chough -f vtt -o subtitles.vtt video.mp4
+# Video files work too - extracts audio automatically
+chough -f vtt -o subtitles.vtt lecture.mp4
 
 # JSON with timestamps
 chough -f json podcast.mp3 > transcript.json
