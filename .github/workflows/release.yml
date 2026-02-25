@@ -120,7 +120,7 @@ jobs:
           
           # Copy required DLLs from Go module cache
           $modPath = go env GOMODCACHE
-          $dllPath = Join-Path $modPath "github.com/k2-fsa/sherpa-onnx-go-windows@v1.12.25\lib\x86_64-pc-windows-gnu"
+          $dllPath = Join-Path $modPath "github.com/k2-fsa/sherpa-onnx-go-windows@v1.12.26\lib\x86_64-pc-windows-gnu"
           Copy-Item (Join-Path $dllPath "sherpa-onnx-c-api.dll") .
           Copy-Item (Join-Path $dllPath "onnxruntime.dll") .
           Copy-Item (Join-Path $dllPath "sherpa-onnx-cxx-api.dll") .
