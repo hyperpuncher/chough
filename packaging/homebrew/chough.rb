@@ -1,31 +1,33 @@
 class Chough < Formula
   desc "Fast ASR CLI using Parakeet TDT 0.6b V3"
   homepage "https://github.com/hyperpuncher/chough"
-  version "0.1.0"
+  version "0.1.1"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_Darwin_arm64.tar.gz"
+      url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_darwin_arm64.tar.gz"
       sha256 :no_check
     else
-      url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_Darwin_x86_64.tar.gz"
+      url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_darwin_x86_64.tar.gz"
       sha256 :no_check
     end
   end
 
   on_linux do
-    if Hardware::CPU.arm?
-      url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_Linux_arm64.tar.gz"
-      sha256 :no_check
-    else
-      url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_Linux_x86_64.tar.gz"
-      sha256 :no_check
-    end
+    url "https://github.com/hyperpuncher/chough/releases/download/v#{version}/chough_v#{version}_linux_x86_64.tar.gz"
+    sha256 :no_check
   end
 
   def install
-    bin.install "chough"
+    bin.install "chough-darwin-amd64" => "chough" if OS.mac? && Hardware::CPU.intel?
+    bin.install "chough-darwin-arm64" => "chough" if OS.mac? && Hardware::CPU.arm?
+    bin.install "chough-linux-amd64" => "chough" if OS.linux?
+
+    # Install dylibs on macOS
+    if OS.mac?
+      lib.install Dir["*.dylib"]
+    end
   end
 
   test do
