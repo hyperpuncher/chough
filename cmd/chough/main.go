@@ -20,6 +20,7 @@ const (
 	reset   = "\033[0m"
 	bold    = "\033[1m"
 	dim     = "\033[2m"
+	gray    = "\033[38;5;250m"
 	red     = "\033[31m"
 	green   = "\033[32m"
 	yellow  = "\033[33m"
@@ -39,7 +40,20 @@ func renderProgressBar(current, total, width int) string {
 		filled = width
 	}
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	return fmt.Sprintf("[%s%s%s]", green, bar, reset)
+	return fmt.Sprintf("%s%s%s", gray, bar, reset)
+}
+
+// formatETA formats duration as human readable time (e.g., "1m 23s" or "45s")
+func formatETA(d time.Duration) string {
+	if d < 0 {
+		return "0s"
+	}
+	minutes := int(d.Minutes())
+	seconds := int(d.Seconds()) % 60
+	if minutes > 0 {
+		return fmt.Sprintf("%dm %ds", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds", seconds)
 }
 
 // ChunkResult holds transcription result for a single chunk
@@ -179,17 +193,21 @@ func main() {
 			continue
 		}
 
-		// Progress bar: [████░░░░░░] 2/5
-		progress := renderProgressBar(i+1, len(boundaries)-1, 20)
-		fmt.Fprintf(os.Stderr, "\r%s %sProcessing %s%d/%d%s%s",
-			progress, dim, cyan, i+1, len(boundaries)-1, reset, reset)
+		// Progress bar with ETA
+		progress := renderProgressBar(i+1, len(boundaries)-1, 40)
+		elapsed := time.Since(startTime)
+		percent := float64(i+1) / float64(len(boundaries)-1)
+		eta := time.Duration(float64(elapsed) / percent - float64(elapsed))
+		fmt.Fprintf(os.Stderr, "\r%s %sETA %s%s\033[K",
+			progress, dim, formatETA(eta), reset)
 
 		result, err := transcribeChunk(recognizer, audioFile, chunkStart, chunkEnd-chunkStart)
 		if err != nil {
 			// Show cursor on error
 			fmt.Fprint(os.Stderr, "\033[?25h")
-			fmt.Fprintf(os.Stderr, "\r%s %sChunk %d/%d ERR: %v%s\n",
-				renderProgressBar(i+1, len(boundaries)-1, 20), red, i+1, len(boundaries)-1, err, reset)
+			elapsed := time.Since(startTime)
+			fmt.Fprintf(os.Stderr, "\r%s %sETA %s ERR: %v%s\n",
+				renderProgressBar(i+1, len(boundaries)-1, 40), dim, formatETA(elapsed), err, reset)
 			continue
 		}
 
@@ -205,8 +223,8 @@ func main() {
 	}
 
 	// Final progress bar at 100% - show cursor
-	fmt.Fprintf(os.Stderr, "\r\033[?25h%s %sDone!%s\033[K\n",
-		renderProgressBar(len(boundaries)-1, len(boundaries)-1, 20), green, reset)
+	fmt.Fprintf(os.Stderr, "\r\033[?25h%s %sETA 0s\033[K\n",
+		renderProgressBar(len(boundaries)-1, len(boundaries)-1, 40), dim)
 
 	elapsed := time.Since(startTime)
 	rtFactor := duration / elapsed.Seconds()
