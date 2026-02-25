@@ -115,9 +115,18 @@ jobs:
           check-latest: true
 
       - name: Build
+        shell: pwsh
         run: |
           go build -ldflags="-s -w -X main.version=${env:GITHUB_REF_NAME}" -o chough-windows-amd64.exe ./cmd/chough
-          Compress-Archive -Path chough-windows-amd64.exe -DestinationPath chough_${env:GITHUB_REF_NAME}_Windows_x86_64.zip
+          
+          # Copy required DLLs from Go module cache
+          $modPath = go env GOMODCACHE
+          $dllPath = Join-Path $modPath "github.com/k2-fsa/sherpa-onnx-go-windows@v1.12.25\lib\x86_64-pc-windows-gnu"
+          Copy-Item (Join-Path $dllPath "sherpa-onnx-c-api.dll") .
+          Copy-Item (Join-Path $dllPath "onnxruntime.dll") .
+          Copy-Item (Join-Path $dllPath "sherpa-onnx-cxx-api.dll") .
+          
+          Compress-Archive -Path chough-windows-amd64.exe, *.dll -DestinationPath chough_${env:GITHUB_REF_NAME}_Windows_x86_64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
