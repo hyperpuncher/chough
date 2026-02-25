@@ -395,6 +395,7 @@ func transcribeChunk(recognizer *asr.Recognizer, audioFile string, start, durati
 		"-ss", fmt.Sprintf("%.3f", start),
 		"-t", fmt.Sprintf("%.3f", duration),
 		"-i", audioFile,
+		"-vn", // disable video
 		"-ar", "16000",
 		"-ac", "1",
 		"-acodec", "pcm_s16le",
