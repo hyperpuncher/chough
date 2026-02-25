@@ -1,7 +1,7 @@
 class Chough < Formula
   desc "Fast ASR CLI using Parakeet TDT 0.6b V3"
   homepage "https://github.com/hyperpuncher/chough"
-  version "0.1.1"
+  version "0.1.4"
   license "MIT"
 
   on_macos do
@@ -24,9 +24,11 @@ class Chough < Formula
     bin.install "chough-darwin-arm64" => "chough" if OS.mac? && Hardware::CPU.arm?
     bin.install "chough-linux-amd64" => "chough" if OS.linux?
 
-    # Install dylibs on macOS
+    # Install libs on macOS and Linux
     if OS.mac?
       lib.install Dir["*.dylib"]
+    elsif OS.linux?
+      lib.install Dir["*.so"]
     end
   end
 
