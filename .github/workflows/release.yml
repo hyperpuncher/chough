@@ -23,8 +23,8 @@ jobs:
 
       - name: Build AMD64
         run: |
-          # Get sherpa-onnx version from go.mod
-          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go ' go.mod | awk '{print $2}')
+          # Get sherpa-onnx-linux version from go.mod
+          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go-linux ' go.mod | awk '{print $2}')
           
           go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-amd64 ./cmd/chough
           
@@ -59,8 +59,8 @@ jobs:
 
       - name: Build
         run: |
-          # Get sherpa-onnx version from go.mod
-          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go ' go.mod | awk '{print $2}')
+          # Get sherpa-onnx-macos version from go.mod
+          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go-macos ' go.mod | awk '{print $2}')
           
           export GOARCH=amd64
           export CGO_ENABLED=1
@@ -105,8 +105,8 @@ jobs:
 
       - name: Build ARM64
         run: |
-          # Get sherpa-onnx version from go.mod
-          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go ' go.mod | awk '{print $2}')
+          # Get sherpa-onnx-macos version from go.mod
+          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go-macos ' go.mod | awk '{print $2}')
           
           export GOARCH=arm64
           export CGO_ENABLED=1
@@ -152,9 +152,9 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
-          # Get sherpa-onnx version from go.mod
+          # Get sherpa-onnx-windows version from go.mod
           $goModContent = Get-Content go.mod -Raw
-          $sherpaVersion = ($goModContent | Select-String 'github.com/k2-fsa/sherpa-onnx-go\s+(\S+)').Matches.Groups[1].Value
+          $sherpaVersion = ($goModContent | Select-String 'github.com/k2-fsa/sherpa-onnx-go-windows\s+(\S+)').Matches.Groups[1].Value
           
           go build -ldflags="-s -w -X main.version=${env:GITHUB_REF_NAME}" -o chough-windows-amd64.exe ./cmd/chough
           
