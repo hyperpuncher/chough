@@ -28,7 +28,7 @@ paru -S chough
 
 ```bash
 brew tap hyperpuncher/homebrew-tap
-brew install --cask chough
+brew install --cask hyperpuncher/tap/chough
 ```
 
 ### Windows (Winget)
