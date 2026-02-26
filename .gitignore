@@ -45,6 +45,7 @@ test/audio/
 # Temporary files
 tmp/
 temp/
+.tmp-libbundle/
 *.tmp
 
 # Sherpa-ONNX binaries (platform specific)

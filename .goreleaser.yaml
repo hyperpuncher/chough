@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+
+project_name: chough
+version: 2
+
+before:
+  hooks:
+    - ./scripts/stage-sherpa-libs.sh
+
+builds:
+  - id: linux-amd64
+    main: ./cmd/chough
+    binary: chough
+    goos: [linux]
+    goarch: [amd64]
+    env:
+      - CGO_ENABLED=1
+      - CC=x86_64-linux-gnu-gcc
+      - CXX=x86_64-linux-gnu-g++
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    hooks:
+      post:
+        - cmd: ./scripts/fix-runtime-paths.sh {{ .Path }} linux amd64
+
+  - id: darwin-amd64
+    main: ./cmd/chough
+    binary: chough
+    goos: [darwin]
+    goarch: [amd64]
+    env:
+      - CGO_ENABLED=1
+      - CC=o64-clang
+      - CXX=o64-clang++
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    hooks:
+      post:
+        - cmd: ./scripts/fix-runtime-paths.sh {{ .Path }} darwin amd64
+
+  - id: darwin-arm64
+    main: ./cmd/chough
+    binary: chough
+    goos: [darwin]
+    goarch: [arm64]
+    env:
+      - CGO_ENABLED=1
+      - CC=oa64-clang
+      - CXX=oa64-clang++
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    hooks:
+      post:
+        - cmd: ./scripts/fix-runtime-paths.sh {{ .Path }} darwin arm64
+
+  - id: windows-amd64
+    main: ./cmd/chough
+    binary: chough
+    goos: [windows]
+    goarch: [amd64]
+    env:
+      - CGO_ENABLED=1
+      - CC=x86_64-w64-mingw32-gcc
+      - CXX=x86_64-w64-mingw32-g++
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+
+archives:
+  - name_template: >-
+      {{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{- if eq .Arch "amd64" -}}x86_64{{- else -}}{{ .Arch }}{{- end -}}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - src: .tmp-libbundle/current/{{ .Os }}_{{ .Arch }}/*
+        strip_parent: true
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  disable: true
+
+homebrew_casks:
+  - name: chough
+    description: Fast ASR CLI using Parakeet TDT 0.6b V3
+    homepage: https://github.com/hyperpuncher/chough
+    license: MIT
+    binaries: [chough]
+    dependencies:
+      - formula: ffmpeg
+    repository:
+      owner: hyperpuncher
+      name: chough
+      branch: main
+    directory: Casks
+    skip_upload: false
+
+winget:
+  - name: chough
+    ids: [windows-amd64]
+    package_identifier: hyperpuncher.chough
+    publisher: hyperpuncher
+    publisher_url: https://github.com/hyperpuncher
+    short_description: Fast ASR CLI using Parakeet TDT 0.6b V3
+    description: Fast, memory-efficient ASR CLI using sherpa-onnx with chunked processing.
+    homepage: https://github.com/hyperpuncher/chough
+    license: MIT
+    license_url: https://github.com/hyperpuncher/chough/blob/main/LICENSE
+    tags: [asr, transcription, speech-to-text, cli]
+    repository:
+      owner: hyperpuncher
+      name: winget-pkgs
+      branch: master
+    skip_upload: true
+
+aurs:
+  - name: chough-bin
+    ids: [linux-amd64]
+    description: Fast ASR CLI using Parakeet TDT 0.6b V3
+    homepage: https://github.com/hyperpuncher/chough
+    license: MIT
+    maintainers:
+      - hyperpuncher
+    provides: [chough]
+    conflicts: [chough]
+    depends: [ffmpeg]
+    git_url: ssh://aur@aur.archlinux.org/chough-bin.git
+    skip_upload: true

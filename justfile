@@ -6,32 +6,22 @@
 default:
     @just --list
 
-# Build the CLI binary
+# Build the CLI binary (current host)
 build:
     go build -o dist/chough ./cmd/chough
 
-# Build for all platforms
-build-all:
-    #!/usr/bin/env bash
-    set -e
-    mkdir -p dist
-    
-    echo "Building for Linux x64..."
-    GOOS=linux GOARCH=amd64 go build -o dist/chough-linux-x64 ./cmd/chough
-    
-    echo "Building for Linux arm64..."
-    GOOS=linux GOARCH=arm64 go build -o dist/chough-linux-arm64 ./cmd/chough
-    
-    echo "Building for macOS x64..."
-    GOOS=darwin GOARCH=amd64 go build -o dist/chough-macos-x64 ./cmd/chough
-    
-    echo "Building for macOS arm64..."
-    GOOS=darwin GOARCH=arm64 go build -o dist/chough-macos-arm64 ./cmd/chough
-    
-    echo "Building for Windows x64..."
-    GOOS=windows GOARCH=amd64 go build -o dist/chough-windows-x64.exe ./cmd/chough
-    
-    echo "Done! Binaries in dist/"
+# Validate goreleaser config
+release-check:
+    goreleaser check
+
+# Local snapshot using goreleaser-cross container (publishing disabled)
+release-cross-snapshot:
+    docker run --rm \
+      -v "$PWD":/work \
+      -w /work \
+      --entrypoint /bin/sh \
+      ghcr.io/goreleaser/goreleaser-cross:latest \
+      -lc 'apt-get update >/dev/null && apt-get install -y patchelf >/dev/null && go mod download && goreleaser release --snapshot --clean --skip=publish --skip=announce --skip=aur --skip=winget'
 
 # Run the CLI with test file
 dev *ARGS:
@@ -72,7 +62,7 @@ lint:
 
 # Clean build artifacts
 clean:
-    rm -rf dist/
+    @if [ -d dist ]; then trash dist; fi
     go clean -cache
 
 # Download and tidy dependencies
@@ -98,4 +88,3 @@ benchmark AUDIO_FILE="test/audio/audio-1min.wav":
     @command -v hyperfine >/dev/null 2>&1 || (echo "Install hyperfine: cargo install hyperfine" && exit 1)
     @echo "Benchmarking with hyperfine..."
     ./benchmarks/benchmark.sh {{AUDIO_FILE}}
-

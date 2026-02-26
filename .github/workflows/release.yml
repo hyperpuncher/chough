@@ -9,195 +9,31 @@ permissions:
   contents: write
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: 'stable'
-          check-latest: true
-
-      - name: Build AMD64
-        run: |
-          # Download all modules first
-          go mod download
-          
-          # Get sherpa-onnx-linux version from go.mod
-          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go-linux ' go.mod | awk '{print $2}')
-          
-          go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-linux-amd64 ./cmd/chough
-          
-          # Bundle .so files
-          modPath=$(go env GOMODCACHE)
-          soPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-linux@${SHERPA_VERSION}/lib/x86_64-unknown-linux-gnu"
-          cp "${soPath}"/*.so .
-          
-          # Fix rpath to look in same directory
-          patchelf --set-rpath '$ORIGIN' chough-linux-amd64
-          
-          tar czf chough_${GITHUB_REF_NAME}_linux_x86_64.tar.gz chough-linux-amd64 *.so
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: chough-linux-amd64
-          path: |
-            chough_*_linux_*.tar.gz
-
-  build-macos-amd64:
-    runs-on: macos-15-intel  # Intel runner (x64)
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: 'stable'
-          check-latest: true
-
-      - name: Build
-        run: |
-          # Get sherpa-onnx-macos version from go.mod
-          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go-macos ' go.mod | awk '{print $2}')
-          
-          export GOARCH=amd64
-          export CGO_ENABLED=1
-          go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-amd64 ./cmd/chough
-          
-          # Bundle ALL dylibs
-          modPath=$(go env GOMODCACHE)
-          dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@${SHERPA_VERSION}/lib/x86_64-apple-darwin"
-          cp "${dylibPath}"/*.dylib .
-          
-          # Fix rpath for binary - change all @rpath to @loader_path
-          for lib in *.dylib; do
-            install_name_tool -change "@rpath/${lib}" "@loader_path/${lib}" chough-darwin-amd64 2>/dev/null || true
-          done
-          
-          # Fix rpath for dylibs themselves (they reference each other)
-          for lib in *.dylib; do
-            for dep in *.dylib; do
-              install_name_tool -change "@rpath/${dep}" "@loader_path/${dep}" "${lib}" 2>/dev/null || true
-            done
-          done
-          
-          tar czf chough_${GITHUB_REF_NAME}_darwin_x86_64.tar.gz chough-darwin-amd64 *.dylib
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: chough-darwin-amd64
-          path: chough_*_darwin_x86_64.tar.gz
-
-  build-macos-arm64:
-    runs-on: macos-latest  # Apple Silicon runner
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: 'stable'
-          check-latest: true
-
-      - name: Build ARM64
-        run: |
-          # Get sherpa-onnx-macos version from go.mod
-          SHERPA_VERSION=$(grep 'github.com/k2-fsa/sherpa-onnx-go-macos ' go.mod | awk '{print $2}')
-          
-          export GOARCH=arm64
-          export CGO_ENABLED=1
-          go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o chough-darwin-arm64 ./cmd/chough
-          
-          # Bundle ALL dylibs
-          modPath=$(go env GOMODCACHE)
-          dylibPath="${modPath}/github.com/k2-fsa/sherpa-onnx-go-macos@${SHERPA_VERSION}/lib/aarch64-apple-darwin"
-          cp "${dylibPath}"/*.dylib .
-          
-          # Fix rpath for binary - change all @rpath to @loader_path
-          for lib in *.dylib; do
-            install_name_tool -change "@rpath/${lib}" "@loader_path/${lib}" chough-darwin-arm64 2>/dev/null || true
-          done
-          
-          # Fix rpath for dylibs themselves (they reference each other)
-          for lib in *.dylib; do
-            for dep in *.dylib; do
-              install_name_tool -change "@rpath/${dep}" "@loader_path/${dep}" "${lib}" 2>/dev/null || true
-            done
-          done
-          
-          tar czf chough_${GITHUB_REF_NAME}_darwin_arm64.tar.gz chough-darwin-arm64 *.dylib
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: chough-darwin-arm64
-          path: chough_*_darwin_arm64.tar.gz
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: 'stable'
-          check-latest: true
-
-      - name: Build
-        shell: pwsh
-        run: |
-          # Get sherpa-onnx-windows version from go.mod
-          $goModContent = Get-Content go.mod -Raw
-          $sherpaVersion = ($goModContent | Select-String 'github.com/k2-fsa/sherpa-onnx-go-windows\s+(\S+)').Matches.Groups[1].Value
-          
-          go build -ldflags="-s -w -X main.version=${env:GITHUB_REF_NAME}" -o chough-windows-amd64.exe ./cmd/chough
-          
-          # Copy required DLLs from Go module cache
-          $modPath = go env GOMODCACHE
-          $dllPath = Join-Path $modPath "github.com/k2-fsa/sherpa-onnx-go-windows@${sherpaVersion}\lib\x86_64-pc-windows-gnu"
-          Copy-Item (Join-Path $dllPath "sherpa-onnx-c-api.dll") .
-          Copy-Item (Join-Path $dllPath "onnxruntime.dll") .
-          Copy-Item (Join-Path $dllPath "sherpa-onnx-cxx-api.dll") .
-          
-          Compress-Archive -Path chough-windows-amd64.exe, *.dll -DestinationPath chough_${env:GITHUB_REF_NAME}_windows_x86_64.zip
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: chough-windows-amd64
-          path: chough_*_windows_x86_64.zip
-
   release:
-    needs: [build-linux, build-macos-amd64, build-macos-arm64, build-windows]
     runs-on: ubuntu-latest
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v7
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
-          pattern: chough-*
-          merge-multiple: true
+          fetch-depth: 0
 
-      - name: Create checksums
+      - name: Run tests
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          check-latest: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Release with goreleaser-cross
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ls -la
-          sha256sum chough_*.tar.gz chough_*.zip > checksums.txt || true
-          cat checksums.txt
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            chough_*.tar.gz
-            chough_*.zip
-            checksums.txt
-          draft: false
-          prerelease: false
+          docker run --rm \
+            -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+            -v "$PWD":/work \
+            -w /work \
+            --entrypoint /bin/sh \
+            ghcr.io/goreleaser/goreleaser-cross:latest \
+            -lc 'apt-get update >/dev/null && apt-get install -y patchelf >/dev/null && git config --global --add safe.directory /work && go mod download && goreleaser check && goreleaser release --clean --skip=aur --skip=winget'
