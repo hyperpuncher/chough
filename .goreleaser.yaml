@@ -92,8 +92,9 @@ homebrew_casks:
       - formula: ffmpeg
     repository:
       owner: hyperpuncher
-      name: chough
+      name: homebrew-tap
       branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Casks
     skip_upload: false
 

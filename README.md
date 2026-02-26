@@ -27,7 +27,7 @@ paru -S chough
 ### macOS (Homebrew)
 
 ```bash
-brew tap hyperpuncher/chough https://github.com/hyperpuncher/chough
+brew tap hyperpuncher/homebrew-tap
 brew install --cask chough
 ```
 
