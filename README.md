@@ -44,6 +44,12 @@ Download from [GitHub Releases](https://github.com/hyperpuncher/chough/releases)
 go install github.com/hyperpuncher/chough/cmd/chough@latest
 ```
 
+### Skill
+
+```bash
+npx skills add hyperpuncher/dotagents --skill chough
+```
+
 ## Usage
 
 ```bash
