@@ -19,9 +19,7 @@ _pronounced "chuff" /tʃʌf/_ — a fast, memory-efficient ASR CLI using [Parake
 ### Arch Linux (AUR)
 
 ```bash
-yay -S chough
-# or
-paru -S chough
+paru -S chough-bin
 ```
 
 ### macOS (Homebrew)
@@ -33,7 +31,7 @@ brew install --cask hyperpuncher/tap/chough
 ### Windows (Winget)
 
 ```bash
-winget install hyperpuncher.chough
+winget install chough
 ```
 
 ### Binary releases
