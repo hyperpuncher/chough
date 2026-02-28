@@ -94,7 +94,7 @@ homebrew_casks:
       owner: hyperpuncher
       name: homebrew-tap
       branch: main
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      token: "{{ .Env.GH_PAT }}"
     directory: Casks
     skip_upload: false
     hooks:
@@ -106,7 +106,6 @@ homebrew_casks:
 
 winget:
   - name: chough
-    ids: [windows-amd64]
     package_identifier: hyperpuncher.chough
     publisher: hyperpuncher
     publisher_url: https://github.com/hyperpuncher
@@ -119,8 +118,16 @@ winget:
     repository:
       owner: hyperpuncher
       name: winget-pkgs
-      branch: master
-    skip_upload: true
+      branch: "{{.ProjectName}}-{{.Version}}"
+      token: "{{ .Env.GH_PAT }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    skip_upload: auto
 
 aurs:
   - name: chough-bin

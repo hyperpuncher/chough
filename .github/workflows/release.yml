@@ -29,15 +29,15 @@ jobs:
       - name: Release with goreleaser-cross
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
           AUR_KEY: ${{ secrets.AUR_KEY }}
         run: |
           docker run --rm \
             -e GITHUB_TOKEN="$GITHUB_TOKEN" \
-            -e HOMEBREW_TAP_GITHUB_TOKEN="$HOMEBREW_TAP_GITHUB_TOKEN" \
+            -e GH_PAT="$GH_PAT" \
             -e AUR_KEY="$AUR_KEY" \
             -v "$PWD":/work \
             -w /work \
             --entrypoint /bin/sh \
             ghcr.io/goreleaser/goreleaser-cross:latest \
-            -lc 'apt-get update >/dev/null && apt-get install -y patchelf >/dev/null && git config --global --add safe.directory /work && go mod download && goreleaser check && goreleaser release --clean --skip=winget'
+            -lc 'apt-get update >/dev/null && apt-get install -y patchelf >/dev/null && git config --global --add safe.directory /work && go mod download && goreleaser check && goreleaser release --clean'
