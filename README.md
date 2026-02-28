@@ -66,7 +66,7 @@ chough -c 30 long-interview.wav
 | ------------------ | ------------------------------ | ------- |
 | `-c, --chunk-size` | Chunk size in seconds          | 60      |
 | `-f, --format`     | Output format: text, json, vtt | text    |
-| `-o, --output`     | Output file (default: stdout)  | -       |
+| `-o, --output`     | Output file                    | stdout  |
 | `--version`        | Show version                   | -       |
 | `-h, --help`       | Show help                      | -       |
 
