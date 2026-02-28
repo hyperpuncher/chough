@@ -124,7 +124,6 @@ winget:
 
 aurs:
   - name: chough-bin
-    ids: [linux-amd64]
     description: Fast ASR CLI using Parakeet TDT 0.6b V3
     homepage: https://github.com/hyperpuncher/chough
     license: MIT
@@ -134,4 +133,13 @@ aurs:
     conflicts: [chough]
     depends: [ffmpeg]
     git_url: ssh://aur@aur.archlinux.org/chough-bin.git
-    skip_upload: true
+    private_key: "{{ .Env.AUR_KEY }}"
+    package: |-
+      # Install binary and libraries to /opt/chough/
+      install -dm755 "${pkgdir}/opt/chough"
+      install -Dm755 "./chough" "${pkgdir}/opt/chough/chough"
+      install -Dm644 "./"*.so "${pkgdir}/opt/chough/"
+
+      # Symlink binary to /usr/bin/
+      install -dm755 "${pkgdir}/usr/bin"
+      ln -sf "/opt/chough/chough" "${pkgdir}/usr/bin/chough"
