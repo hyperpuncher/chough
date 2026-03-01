@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hyperpuncher/chough/internal/asr"
 	"github.com/hyperpuncher/chough/internal/models"
@@ -72,38 +73,120 @@ type Cue struct {
 
 var version = "dev"
 
+type cliFlag struct {
+	short       string
+	long        string
+	arg         string
+	description string
+	defaultVal  string
+}
+
+func formatFlagLabel(f cliFlag) string {
+	parts := make([]string, 0, 2)
+	if f.short != "" {
+		parts = append(parts, "-"+f.short)
+	}
+	if f.long != "" {
+		parts = append(parts, "--"+f.long)
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+func plainFlagLabel(f cliFlag) string {
+	label := formatFlagLabel(f)
+	if f.arg != "" {
+		label += " " + f.arg
+	}
+	return label
+}
+
+func coloredFlagLabel(f cliFlag) string {
+	base := formatFlagLabel(f)
+	if f.arg == "" {
+		return cyan + base + reset
+	}
+	return cyan + base + " " + yellow + f.arg + reset
+}
+
+type usageRow struct {
+	label      string
+	plainLabel string
+	desc       string
+}
+
+func printAlignedRows(rows []usageRow) {
+	maxLabelWidth := 0
+	for _, row := range rows {
+		if w := utf8.RuneCountInString(row.plainLabel); w > maxLabelWidth {
+			maxLabelWidth = w
+		}
+	}
+
+	for _, row := range rows {
+		pad := strings.Repeat(" ", maxLabelWidth-utf8.RuneCountInString(row.plainLabel))
+		fmt.Fprintf(os.Stderr, "  %s%s  %s\n", row.label, pad, row.desc)
+	}
+}
+
+func printUsage(flags []cliFlag) {
+	fmt.Fprintf(os.Stderr, "%s🐦‍⬛ %schough%s\n\n", bold, magenta, reset)
+	fmt.Fprintf(os.Stderr, "%sUsage:%s\n", bold, reset)
+	fmt.Fprintln(os.Stderr, "  chough [flags] <audio-file>")
+	fmt.Fprintln(os.Stderr)
+
+	fmt.Fprintf(os.Stderr, "%sFlags:%s\n", bold, reset)
+	flagRows := make([]usageRow, 0, len(flags))
+	for _, f := range flags {
+		desc := f.description
+		if f.defaultVal != "" {
+			desc += fmt.Sprintf(" %s(default: %s)%s", dim, f.defaultVal, reset)
+		}
+
+		flagRows = append(flagRows, usageRow{
+			label:      coloredFlagLabel(f),
+			plainLabel: plainFlagLabel(f),
+			desc:       desc,
+		})
+	}
+	printAlignedRows(flagRows)
+	fmt.Fprintln(os.Stderr)
+
+	fmt.Fprintf(os.Stderr, "%sExamples:%s\n", bold, reset)
+	exampleRows := []usageRow{
+		{label: fmt.Sprintf("%s$%s chough audio.mp3", green, reset), plainLabel: "$ chough audio.mp3", desc: fmt.Sprintf("%s# 60s chunks, text output%s", dim, reset)},
+		{label: fmt.Sprintf("%s$%s chough -c 30 talk.mp3", green, reset), plainLabel: "$ chough -c 30 talk.mp3", desc: fmt.Sprintf("%s# 30s chunks%s", dim, reset)},
+		{label: fmt.Sprintf("%s$%s chough -f vtt -o subs.vtt audio.mp3", green, reset), plainLabel: "$ chough -f vtt -o subs.vtt audio.mp3", desc: fmt.Sprintf("%s# WebVTT to file%s", dim, reset)},
+	}
+	printAlignedRows(exampleRows)
+	fmt.Fprintln(os.Stderr)
+
+	fmt.Fprintf(os.Stderr, "%sEnvironment:%s\n", bold, reset)
+	envRows := []usageRow{
+		{label: fmt.Sprintf("%sCHOUGH_MODEL%s", cyan, reset), plainLabel: "CHOUGH_MODEL", desc: fmt.Sprintf("path to model dir %s(optional, auto-downloaded if not set)%s", dim, reset)},
+	}
+	printAlignedRows(envRows)
+}
+
 func main() {
 	// Define flags
+	usageFlags := []cliFlag{
+		{short: "c", long: "chunk-size", arg: "int", description: "chunk size in seconds", defaultVal: "60"},
+		{short: "f", long: "format", arg: "string", description: "output format: text, json, vtt", defaultVal: "text"},
+		{short: "o", long: "output", arg: "file", description: "output file", defaultVal: "stdout"},
+		{long: "version", description: "show version"},
+	}
+
 	chunkSize := flag.Int("c", 60, "chunk size in seconds")
 	flag.IntVar(chunkSize, "chunk-size", 60, "chunk size in seconds")
 	format := flag.String("f", "text", "output format (text, json, vtt)")
 	flag.StringVar(format, "format", "text", "output format (text, json, vtt)")
-	outputFile := flag.String("o", "", "output file (default: stdout)")
-	flag.StringVar(outputFile, "output", "", "output file (default: stdout)")
+	outputFile := flag.String("o", "", "output file")
+	flag.StringVar(outputFile, "output", "", "output file")
 	showVersion := flag.Bool("version", false, "show version")
 
-	// Pretty usage message
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "%s🐦‍⬛ %schough%s\n\n", bold, magenta, reset)
-		fmt.Fprintf(os.Stderr, "%sUsage:%s chough [flags] <audio-file>\n\n", bold, reset)
-		fmt.Fprintf(os.Stderr, "%sFlags:%s\n", bold, reset)
-		fmt.Fprintf(os.Stderr, "  %s-c, --chunk-size%s %sint%s    chunk size in seconds %s(default: 60)%s\n",
-			cyan, reset, yellow, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s-f, --format%s %sstring%s    output format: text, json, vtt %s(default: text)%s\n",
-			cyan, reset, yellow, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s-o, --output%s %sfile%s      output file %s(default: stdout)%s\n",
-			cyan, reset, yellow, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s--version%s               show version\n", cyan, reset)
-		fmt.Fprintf(os.Stderr, "\n%sExamples:%s\n", bold, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough audio.mp3 %s# 60s chunks, text output%s\n",
-			green, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough -c 30 talk.mp3 %s# 30s chunks%s\n",
-			green, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "  %s$%s chough -f vtt -o subs.vtt audio.mp3 %s# WebVTT to file%s\n",
-			green, reset, dim, reset)
-		fmt.Fprintf(os.Stderr, "\n%sEnvironment:%s\n", bold, reset)
-		fmt.Fprintf(os.Stderr, "  %sCHOUGH_MODEL%s    path to model dir %s(optional, auto-downloaded if not set)%s\n",
-			cyan, reset, dim, reset)
+		printUsage(usageFlags)
 	}
 
 	flag.Parse()
@@ -194,7 +277,7 @@ func main() {
 		progress := renderProgressBar(i+1, len(boundaries)-1, 40)
 		elapsed := time.Since(startTime)
 		percent := float64(i+1) / float64(len(boundaries)-1)
-		eta := time.Duration(float64(elapsed) / percent - float64(elapsed))
+		eta := time.Duration(float64(elapsed)/percent - float64(elapsed))
 		fmt.Fprintf(os.Stderr, "\r%s %sETA %s%s\033[K",
 			progress, dim, formatETA(eta), reset)
 
