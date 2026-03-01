@@ -6,9 +6,14 @@ _pronounced "chuff" /tʃʌf/_ — a fast, memory-efficient ASR CLI using [Parake
 
 - ⚡ **Fast**: 7-20x realtime transcription
 - 🧠 **Memory-efficient**: Processes audio in chunks
-- 📦 **Any format**: If ffmpeg supports it, chough supports it
+- 📦 **Any format**: If `ffmpeg` supports it, `chough` supports it
 - 🎯 **No setup**: Auto-downloads models on first run
 - 📝 **Multiple formats**: text, json, vtt
+- 💻 **CPU only**: No GPU required
+
+## Supported Languages
+
+Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Slovak, Slovenian, Spanish, Swedish, Russian, Ukrainian
 
 ## Requirements
 
