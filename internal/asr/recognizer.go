@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/hyperpuncher/chough/internal/audio"
+	"github.com/hyperpuncher/chough/internal/models"
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )
 
@@ -23,11 +24,11 @@ func NewRecognizer(cfg *Config) (*Recognizer, error) {
 		},
 		ModelConfig: sherpa.OfflineModelConfig{
 			Transducer: sherpa.OfflineTransducerModelConfig{
-				Encoder: filepath.Join(cfg.ModelPath, "encoder.int8.onnx"),
-				Decoder: filepath.Join(cfg.ModelPath, "decoder.int8.onnx"),
-				Joiner:  filepath.Join(cfg.ModelPath, "joiner.int8.onnx"),
+				Encoder: filepath.Join(cfg.ModelPath, models.EncoderFile),
+				Decoder: filepath.Join(cfg.ModelPath, models.DecoderFile),
+				Joiner:  filepath.Join(cfg.ModelPath, models.JoinerFile),
 			},
-			Tokens:     filepath.Join(cfg.ModelPath, "tokens.txt"),
+			Tokens:     filepath.Join(cfg.ModelPath, models.TokensFile),
 			NumThreads: cfg.NumThreads,
 			Provider:   cfg.Provider,
 			ModelType:  "nemo_transducer",

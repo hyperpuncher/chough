@@ -43,7 +43,6 @@ func ReadWave(filename string) (*Wave, error) {
 		numChannels   int
 		bitsPerSample int
 		dataSize      uint32
-		dataFound     bool
 	)
 
 	// Parse chunks
@@ -52,10 +51,7 @@ func ReadWave(filename string) (*Wave, error) {
 		var chunkHeader [8]byte
 		_, err := io.ReadFull(file, chunkHeader[:])
 		if err == io.EOF {
-			if !dataFound {
-				return nil, fmt.Errorf("no data chunk found in WAV file")
-			}
-			break
+			return nil, fmt.Errorf("no data chunk found in WAV file")
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to read chunk header: %w", err)
@@ -92,7 +88,6 @@ func ReadWave(filename string) (*Wave, error) {
 
 		case "data":
 			dataSize = chunkSize
-			dataFound = true
 			// Read the audio data now
 			return readSamples(file, sampleRate, dataSize)
 
@@ -103,12 +98,6 @@ func ReadWave(filename string) (*Wave, error) {
 			}
 		}
 	}
-
-	if !dataFound {
-		return nil, fmt.Errorf("no data chunk found in WAV file")
-	}
-
-	return nil, fmt.Errorf("failed to read audio data")
 }
 
 func readSamples(file *os.File, sampleRate int, dataSize uint32) (*Wave, error) {

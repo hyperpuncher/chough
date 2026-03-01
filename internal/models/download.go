@@ -14,7 +14,14 @@ import (
 const (
 	DefaultModelName = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 	ModelURL         = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2"
+
+	EncoderFile = "encoder.int8.onnx"
+	DecoderFile = "decoder.int8.onnx"
+	JoinerFile  = "joiner.int8.onnx"
+	TokensFile  = "tokens.txt"
 )
+
+var requiredModelFiles = []string{EncoderFile, DecoderFile, JoinerFile, TokensFile}
 
 // GetModelPath returns the path to the model directory, downloading if necessary
 func GetModelPath() (string, error) {
@@ -55,8 +62,7 @@ func getCacheDir() string {
 }
 
 func isValidModel(path string) bool {
-	required := []string{"encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"}
-	for _, file := range required {
+	for _, file := range requiredModelFiles {
 		if _, err := os.Stat(filepath.Join(path, file)); err != nil {
 			return false
 		}
@@ -69,7 +75,8 @@ func downloadAndExtract(targetDir string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmpFile.Name())
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
 
 	resp, err := http.Get(ModelURL)
 	if err != nil {
@@ -115,12 +122,14 @@ func downloadAndExtract(targetDir string) error {
 			return rerr
 		}
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
 	fmt.Fprintln(os.Stderr) // New line after progress
 
 	fmt.Fprintf(os.Stderr, "Extracting...\n")
 
-	if err := extractTarBz2(tmpFile.Name(), targetDir); err != nil {
+	if err := extractTarBz2(tmpPath, targetDir); err != nil {
 		return fmt.Errorf("extraction failed: %w", err)
 	}
 
@@ -182,7 +191,9 @@ func extractTarBz2(archivePath, targetDir string) error {
 				outFile.Close()
 				return err
 			}
-			outFile.Close()
+			if err := outFile.Close(); err != nil {
+				return err
+			}
 		}
 	}
 
