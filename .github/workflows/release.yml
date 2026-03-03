@@ -45,6 +45,7 @@ jobs:
             -e GH_PAT="$GH_PAT" \
             -e AUR_KEY="$AUR_KEY" \
             -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.docker/config.json":/root/.docker/config.json \
             -v "$PWD":/work \
             -w /work \
             --entrypoint /bin/sh \
