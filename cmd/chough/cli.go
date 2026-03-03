@@ -27,11 +27,19 @@ var (
 )
 
 type cliOptions struct {
+	// CLI mode
 	AudioFile   string
 	ChunkSize   int
 	Format      string
 	OutputFile  string
 	ShowVersion bool
+
+	// Server mode
+	ServerMode  bool
+	ServerHost  string
+	ServerPort  int
+	Workers     int
+	MaxUploadMB int
 }
 
 type cliFlag struct {
@@ -53,6 +61,14 @@ var usageFlags = []cliFlag{
 	{short: "f", long: "format", arg: "string", description: "output format: text, json, vtt", defaultVal: "text"},
 	{short: "o", long: "output", arg: "file", description: "output file", defaultVal: "stdout"},
 	{long: "version", description: "show version"},
+}
+
+var serverFlags = []cliFlag{
+	{long: "server", description: "run in server mode"},
+	{long: "host", arg: "string", description: "server host", defaultVal: "0.0.0.0"},
+	{long: "port", arg: "int", description: "server port", defaultVal: "8080"},
+	{long: "workers", arg: "int", description: "concurrent workers", defaultVal: "2"},
+	{long: "max-upload", arg: "int", description: "max upload size in MB", defaultVal: "1024"},
 }
 
 func init() {
@@ -84,6 +100,7 @@ func parseCLI(args []string) (cliOptions, error) {
 	fs := flag.NewFlagSet("chough", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
+	// CLI flags
 	chunkSize := fs.Int("c", 60, "chunk size in seconds")
 	fs.IntVar(chunkSize, "chunk-size", 60, "chunk size in seconds")
 	format := fs.String("f", "text", "output format (text, json, vtt)")
@@ -91,6 +108,14 @@ func parseCLI(args []string) (cliOptions, error) {
 	outputFile := fs.String("o", "", "output file")
 	fs.StringVar(outputFile, "output", "", "output file")
 	showVersion := fs.Bool("version", false, "show version")
+
+	// Server flags
+	serverMode := fs.Bool("server", false, "run in server mode")
+	serverHost := fs.String("host", "0.0.0.0", "server host")
+	serverPort := fs.Int("port", 8080, "server port")
+	workers := fs.Int("workers", 2, "concurrent workers")
+	maxUploadMB := fs.Int("max-upload", 1024, "max upload size in MB")
+
 	fs.Usage = func() {
 		printUsage()
 	}
@@ -107,8 +132,14 @@ func parseCLI(args []string) (cliOptions, error) {
 		Format:      strings.ToLower(*format),
 		OutputFile:  *outputFile,
 		ShowVersion: *showVersion,
+		ServerMode:  *serverMode,
+		ServerHost:  *serverHost,
+		ServerPort:  *serverPort,
+		Workers:     *workers,
+		MaxUploadMB: *maxUploadMB,
 	}
-	if opts.ShowVersion {
+
+	if opts.ShowVersion || opts.ServerMode {
 		return opts, nil
 	}
 
@@ -168,11 +199,12 @@ func printAlignedRows(rows []usageRow) {
 
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "%s🐦‍⬛ %schough%s\n\n", bold, magenta, reset)
-	fmt.Fprintf(os.Stderr, "%sUsage:%s\n", bold, reset)
+
+	fmt.Fprintf(os.Stderr, "%sCLI Usage:%s\n", bold, reset)
 	fmt.Fprintln(os.Stderr, "  chough [flags] <audio-file>")
 	fmt.Fprintln(os.Stderr)
 
-	fmt.Fprintf(os.Stderr, "%sFlags:%s\n", bold, reset)
+	fmt.Fprintf(os.Stderr, "%sCLI Flags:%s\n", bold, reset)
 	flagRows := make([]usageRow, 0, len(usageFlags))
 	for _, f := range usageFlags {
 		desc := f.description
@@ -188,11 +220,32 @@ func printUsage() {
 	printAlignedRows(flagRows)
 	fmt.Fprintln(os.Stderr)
 
+	fmt.Fprintf(os.Stderr, "%sServer Usage:%s\n", bold, reset)
+	fmt.Fprintln(os.Stderr, "  chough --server [flags]")
+	fmt.Fprintln(os.Stderr)
+
+	fmt.Fprintf(os.Stderr, "%sServer Flags:%s\n", bold, reset)
+	serverRows := make([]usageRow, 0, len(serverFlags))
+	for _, f := range serverFlags {
+		desc := f.description
+		if f.defaultVal != "" {
+			desc += fmt.Sprintf(" %s(default: %s)%s", dim, f.defaultVal, reset)
+		}
+		serverRows = append(serverRows, usageRow{
+			label:      coloredFlagLabel(f),
+			plainLabel: plainFlagLabel(f),
+			desc:       desc,
+		})
+	}
+	printAlignedRows(serverRows)
+	fmt.Fprintln(os.Stderr)
+
 	fmt.Fprintf(os.Stderr, "%sExamples:%s\n", bold, reset)
 	exampleRows := []usageRow{
 		{label: fmt.Sprintf("%s$%s chough audio.mp3", green, reset), plainLabel: "$ chough audio.mp3", desc: fmt.Sprintf("%s# 60s chunks, text output%s", dim, reset)},
 		{label: fmt.Sprintf("%s$%s chough -c 30 talk.mp3", green, reset), plainLabel: "$ chough -c 30 talk.mp3", desc: fmt.Sprintf("%s# 30s chunks%s", dim, reset)},
 		{label: fmt.Sprintf("%s$%s chough -f vtt -o subs.vtt audio.mp3", green, reset), plainLabel: "$ chough -f vtt -o subs.vtt audio.mp3", desc: fmt.Sprintf("%s# WebVTT to file%s", dim, reset)},
+		{label: fmt.Sprintf("%s$%s chough --server --port 8080", green, reset), plainLabel: "$ chough --server --port 8080", desc: fmt.Sprintf("%s# Run server on port 8080%s", dim, reset)},
 	}
 	printAlignedRows(exampleRows)
 	fmt.Fprintln(os.Stderr)

@@ -30,6 +30,12 @@ func run(args []string) error {
 		return nil
 	}
 
+	// Server mode
+	if opts.ServerMode {
+		return runServer(&opts)
+	}
+
+	// CLI mode
 	recognizer, err := loadRecognizer()
 	if err != nil {
 		return err

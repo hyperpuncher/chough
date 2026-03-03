@@ -10,6 +10,7 @@ _pronounced "chuff" /tʃʌf/_ — a fast, memory-efficient ASR CLI using [Parake
 - 🎯 **No setup**: Auto-downloads models on first run
 - 📝 **Multiple formats**: text, json, vtt
 - 💻 **CPU only**: No GPU required
+- 🌐 **Server mode**: HTTP API for batch processing
 
 ## Supported Languages
 
@@ -55,7 +56,7 @@ go install github.com/hyperpuncher/chough/cmd/chough@latest
 npx skills add hyperpuncher/dotagents --skill chough
 ```
 
-## Usage
+## CLI Usage
 
 ```bash
 # Basic transcription (text to stdout)
@@ -71,7 +72,7 @@ chough -f json podcast.mp3 > transcript.json
 chough -c 30 long-interview.wav
 ```
 
-## Flags
+### Flags
 
 | Flag               | Description                    | Default |
 | ------------------ | ------------------------------ | ------- |
@@ -80,6 +81,69 @@ chough -c 30 long-interview.wav
 | `-o, --output`     | Output file                    | stdout  |
 | `--version`        | Show version                   | -       |
 | `-h, --help`       | Show help                      | -       |
+
+## Server Mode
+
+Run `chough` as an HTTP server for API access. The server keeps the model loaded in memory (~1.6GB), eliminating the ~1.5s startup time per request.
+
+```bash
+# Start server
+chough --server --port 8080
+
+# With custom settings
+chough --server --host 0.0.0.0 --port 8080 --workers 2
+```
+
+### API Endpoints
+
+| Method | Endpoint      | Description                                    |
+| ------ | ------------- | ---------------------------------------------- |
+| POST   | `/transcribe` | Transcribe audio (file upload, URL, or base64) |
+| GET    | `/health`     | Health check with queue status                 |
+
+### API Examples
+
+```bash
+# Upload file
+curl -X POST http://localhost:8080/transcribe \
+  -F "file=@audio.mp3" \
+  -F "format=json" \
+  -F "chunk_size=60"
+
+# Transcribe from URL
+curl -X POST http://localhost:8080/transcribe \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/audio.mp3", "format": "vtt"}'
+
+# Base64 audio
+curl -X POST http://localhost:8080/transcribe \
+  -H "Content-Type: application/json" \
+  -d '{"base64": "...", "format": "text"}'
+
+# Health check
+curl http://localhost:8080/health
+```
+
+### Server Flags
+
+| Flag           | Description          | Default |
+| -------------- | -------------------- | ------- |
+| `--server`     | Run in server mode   | -       |
+| `--host`       | Server host          | 0.0.0.0 |
+| `--port`       | Server port          | 8080    |
+| `--workers`    | Concurrent workers   | 2       |
+| `--max-upload` | Max upload size (MB) | 1024    |
+
+### Docker
+
+```bash
+# Build and run
+docker build -t chough .
+docker run -d -p 8080:8080 chough
+
+# Or use docker-compose
+docker-compose up -d
+```
 
 ## Environment
 
@@ -94,7 +158,7 @@ Models are automatically downloaded to `$XDG_CACHE_HOME/chough/models` (~650MB).
 ## How it works
 
 1. Splits audio into 60s chunks (configurable)
-2. Loads ONNX model once (~3s)
+2. Loads ONNX model once (~1.5s)
 3. Processes chunks sequentially
 4. Outputs results
 
