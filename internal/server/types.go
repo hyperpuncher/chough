@@ -7,9 +7,6 @@ import (
 	"github.com/hyperpuncher/chough/internal/types"
 )
 
-// ChunkResult is an alias for the shared type
-type ChunkResult = types.ChunkResult
-
 // Job represents a transcription job
 type Job struct {
 	ID        string
@@ -27,7 +24,7 @@ type JobResult struct {
 	ProcessingTime float64
 	RealtimeFactor float64
 	Text           string
-	Chunks         []ChunkResult
+	Chunks         []types.ChunkResult
 }
 
 // TranscribeRequest represents a transcription request
@@ -40,13 +37,13 @@ type TranscribeRequest struct {
 
 // TranscribeResponse represents a transcription response
 type TranscribeResponse struct {
-	Success        bool          `json:"success"`
-	Error          string        `json:"error,omitempty"`
-	Duration       float64       `json:"duration_seconds"`
-	ProcessingTime float64       `json:"processing_time_seconds"`
-	RealtimeFactor float64       `json:"realtime_factor"`
-	Text           string        `json:"text"`
-	Chunks         []ChunkResult `json:"chunks,omitempty"`
+	Success        bool                `json:"success"`
+	Error          string              `json:"error,omitempty"`
+	Duration       float64             `json:"duration_seconds"`
+	ProcessingTime float64             `json:"processing_time_seconds"`
+	RealtimeFactor float64             `json:"realtime_factor"`
+	Text           string              `json:"text"`
+	Chunks         []types.ChunkResult `json:"chunks,omitempty"`
 }
 
 // HealthResponse represents a health check response

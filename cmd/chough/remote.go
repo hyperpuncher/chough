@@ -11,14 +11,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/hyperpuncher/chough/internal/types"
 )
 
 type remoteJSONResponse struct {
-	Success  bool          `json:"success"`
-	Error    string        `json:"error,omitempty"`
-	Duration float64       `json:"duration_seconds"`
-	Text     string        `json:"text"`
-	Chunks   []ChunkResult `json:"chunks,omitempty"`
+	Success  bool                `json:"success"`
+	Error    string              `json:"error,omitempty"`
+	Duration float64             `json:"duration_seconds"`
+	Text     string              `json:"text"`
+	Chunks   []types.ChunkResult `json:"chunks,omitempty"`
 }
 
 func resolveRemoteURL() (string, error) {
@@ -41,7 +43,7 @@ func resolveRemoteURL() (string, error) {
 	return strings.TrimRight(raw, "/"), nil
 }
 
-func transcribeRemote(serverURL, audioFile string, chunkSize int) ([]ChunkResult, float64, error) {
+func transcribeRemote(serverURL, audioFile string, chunkSize int) ([]types.ChunkResult, float64, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
@@ -107,8 +109,8 @@ func transcribeRemote(serverURL, audioFile string, chunkSize int) ([]ChunkResult
 	}
 
 	if strings.TrimSpace(parsed.Text) == "" {
-		return []ChunkResult{}, parsed.Duration, nil
+		return []types.ChunkResult{}, parsed.Duration, nil
 	}
 
-	return []ChunkResult{{Text: parsed.Text}}, parsed.Duration, nil
+	return []types.ChunkResult{{Text: parsed.Text}}, parsed.Duration, nil
 }

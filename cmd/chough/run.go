@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/hyperpuncher/chough/internal/asr"
+	"github.com/hyperpuncher/chough/internal/audio"
 	"github.com/hyperpuncher/chough/internal/models"
+	"github.com/hyperpuncher/chough/internal/output"
+	"github.com/hyperpuncher/chough/internal/types"
 )
 
 func run(args []string) error {
@@ -36,7 +40,7 @@ func run(args []string) error {
 	}
 
 	var (
-		results  []ChunkResult
+		results  []types.ChunkResult
 		duration float64
 	)
 
@@ -61,12 +65,12 @@ func run(args []string) error {
 		}
 		defer recognizer.Close()
 
-		duration, err = probeDuration(opts.AudioFile)
+		duration, err = audio.ProbeDuration(opts.AudioFile)
 		if err != nil {
 			return fmt.Errorf("failed to get duration: %w", err)
 		}
 
-		boundaries := buildBoundaries(duration, opts.ChunkSize)
+		boundaries := audio.BuildBoundaries(duration, opts.ChunkSize)
 		fmt.Fprintf(os.Stderr, "audio: %.1fs %s•%s chunks: %ds %s•%s format: %s\n",
 			duration, dim, reset, opts.ChunkSize, dim, reset, opts.Format)
 
@@ -88,7 +92,7 @@ func run(args []string) error {
 	}
 	defer closeFn()
 
-	if err := writeOutput(out, opts.Format, results, duration); err != nil {
+	if err := output.Write(out, opts.Format, results, duration); err != nil {
 		return fmt.Errorf("error writing output: %w", err)
 	}
 	return nil
@@ -115,22 +119,9 @@ func loadRecognizer() (*asr.Recognizer, error) {
 	return recognizer, nil
 }
 
-func buildBoundaries(duration float64, chunkSecs int) []float64 {
-	chunkCount := int(duration/float64(chunkSecs)) + 1
-	boundaries := make([]float64, 0, chunkCount+1)
-	for i := 0; i < chunkCount; i++ {
-		start := float64(i * chunkSecs)
-		if start >= duration {
-			break
-		}
-		boundaries = append(boundaries, start)
-	}
-	return append(boundaries, duration)
-}
-
-func transcribeAudio(recognizer *asr.Recognizer, audioFile string, boundaries []float64) ([]ChunkResult, time.Duration) {
+func transcribeAudio(recognizer *asr.Recognizer, audioFile string, boundaries []float64) ([]types.ChunkResult, time.Duration) {
 	startTime := time.Now()
-	results := make([]ChunkResult, 0, len(boundaries)-1)
+	results := make([]types.ChunkResult, 0, len(boundaries)-1)
 	total := len(boundaries) - 1
 
 	hideCursor()
@@ -151,7 +142,7 @@ func transcribeAudio(recognizer *asr.Recognizer, audioFile string, boundaries []
 			continue
 		}
 
-		results = append(results, ChunkResult{
+		results = append(results, types.ChunkResult{
 			StartTime:  chunkStart,
 			EndTime:    chunkEnd,
 			Text:       result.Text,
@@ -175,4 +166,19 @@ func openOutput(path string) (io.Writer, func(), error) {
 	}
 	fmt.Fprintf(os.Stderr, "Output: %s\n", path)
 	return file, func() { file.Close() }, nil
+}
+
+func transcribeChunk(recognizer *asr.Recognizer, audioFile string, start, duration float64) (*asr.Result, error) {
+	tmpDir, err := os.MkdirTemp("", "chough-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	chunkFile := filepath.Join(tmpDir, "chunk.wav")
+	if err := audio.ExtractChunkWAV(audioFile, chunkFile, start, duration); err != nil {
+		return nil, err
+	}
+
+	return recognizer.Transcribe(chunkFile)
 }
