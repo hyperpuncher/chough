@@ -1,8 +1,17 @@
-#!/bin/bash
-# Benchmark chough against whisper using hyperfine
-# Usage: ./benchmark.sh <audio-file>
+#!/usr/bin/env bash
+# Benchmark chough against other implementations or another chough build.
+# Usage:
+#   ./benchmarks/benchmark.sh <audio-file>
+#   ./benchmarks/benchmark.sh <audio-file> <baseline-binary> [candidate-binary]
+
+set -euo pipefail
 
 AUDIO_FILE="${1:-test/audio/audio-1min.wav}"
+BASELINE_BINARY="${2:-}"
+CANDIDATE_BINARY="${3:-./dist/chough}"
+BASELINE_NAME="${BASELINE_NAME:-baseline}"
+CANDIDATE_NAME="${CANDIDATE_NAME:-candidate}"
+RUNS="${RUNS:-3}"
 
 if ! command -v hyperfine >/dev/null 2>&1; then
 	echo "Error: hyperfine not installed (cargo install hyperfine)"
@@ -10,7 +19,7 @@ if ! command -v hyperfine >/dev/null 2>&1; then
 fi
 
 AUDIO_DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$AUDIO_FILE" 2>/dev/null | cut -d. -f1)
-DURATION_FMT="$(($AUDIO_DURATION / 60))m$(($AUDIO_DURATION % 60))s"
+DURATION_FMT="$((AUDIO_DURATION / 60))m$((AUDIO_DURATION % 60))s"
 
 echo "Benchmark: $(basename "$AUDIO_FILE") (${AUDIO_DURATION}s / ${DURATION_FMT})"
 echo ""
@@ -21,35 +30,49 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_FILE="$RESULTS_DIR/benchmark_$TIMESTAMP.md"
 JSON_FILE="$RESULTS_DIR/hyperfine_$TIMESTAMP.json"
 
-# Run hyperfine with memory measurement
-hyperfine \
-	--warmup 1 \
-	--runs 3 \
-	--export-json "$JSON_FILE" \
-	-n "chough" "./dist/chough -f text '$AUDIO_FILE' 2>/dev/null" \
-	-n "whisper-ctranslate2" "uvx whisper-ctranslate2 --model=medium --output_format=txt '$AUDIO_FILE' --output_dir=/tmp 2>/dev/null" \
-	-n "whisper" "uvx --from openai-whisper whisper --model=turbo --output_format=txt '$AUDIO_FILE' --output_dir=/tmp 2>/dev/null" ||
-	true
+CHOUGH_CMD="'$CANDIDATE_BINARY' -f text '$AUDIO_FILE' >/dev/null 2>/dev/null"
+
+# Run hyperfine with memory measurement.
+if [ -n "$BASELINE_BINARY" ]; then
+	BASELINE_CMD="'$BASELINE_BINARY' -f text '$AUDIO_FILE' >/dev/null 2>/dev/null"
+	hyperfine \
+		--warmup 1 \
+		--runs "$RUNS" \
+		--export-json "$JSON_FILE" \
+		-n "$BASELINE_NAME" "$BASELINE_CMD" \
+		-n "$CANDIDATE_NAME" "$CHOUGH_CMD"
+else
+	CHOUGH_REMOTE_CMD="'$CANDIDATE_BINARY' --remote -f text '$AUDIO_FILE' >/dev/null 2>/dev/null"
+	PARAKEET_CMD="/tmp/parakeet.cpp/build/examples/cli/parakeet-cli transcribe --model /tmp/parakeet.cpp/models/tdt-0.6b-v3-q8_0.gguf --input '$AUDIO_FILE' --threads 4 >/dev/null 2>/dev/null"
+	hyperfine \
+		--warmup 1 \
+		--runs "$RUNS" \
+		--export-json "$JSON_FILE" \
+		-n "chough" "$CHOUGH_CMD" \
+		-n "chough (remote)" "$CHOUGH_REMOTE_CMD" \
+		-n "parakeet.cpp" "$PARAKEET_CMD"
+fi
 
 # Generate markdown from JSON
 if [ -f "$JSON_FILE" ]; then
 	cat >"$RESULTS_FILE" <<EOF
 # Benchmark Results
 
-**File:** $(basename "$AUDIO_FILE")  
-**Duration:** ${AUDIO_DURATION}s (${DURATION_FMT})  
-**Date:** $(date)
+- **File:** $(basename "$AUDIO_FILE")
+- **Duration:** ${AUDIO_DURATION}s (${DURATION_FMT})
+- **Date:** $(date)
+- **CPU:** $(lscpu 2>/dev/null | awk -F: '/Model name/{print $2}' | xargs)
+- **Runs:** $RUNS (+ 1 warmup)
 
 ## Results
 
-| Tool | Time | Realtime | Memory |
-|------|------|----------|--------|
+| Tool | Mean | Stddev | Realtime | Peak memory |
+|------|------|--------|----------|-------------|
 EOF
 
-	# Parse JSON with jq
 	jq -r --arg dur "$AUDIO_DURATION" '
-        .results[] | 
-        "| \(.command) | \(.mean | . * 100 | round / 100)s | \(.mean | ($dur | tonumber) / . | . * 10 | round / 10)x | \(.memory_usage_byte[0] / 1024 / 1024 | round)MB |"' \
+        .results[] |
+        "| \(.command) | \(.mean * 1000 | round)ms | \(.stddev * 1000 | round)ms | \(($dur | tonumber) / .mean * 10 | round / 10)x | \(.memory_usage_byte | max / 1024 / 1024 | round)MB |"' \
 		"$JSON_FILE" >>"$RESULTS_FILE"
 fi
 
@@ -57,4 +80,5 @@ echo ""
 echo "Results: $RESULTS_FILE"
 echo "JSON: $JSON_FILE"
 echo ""
+bunx oxfmt "$RESULTS_FILE" 2>/dev/null
 cat "$RESULTS_FILE"
