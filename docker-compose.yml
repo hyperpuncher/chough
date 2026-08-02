@@ -2,10 +2,10 @@ services:
   chough:
     # Use pre-built image from GitHub Container Registry
     image: ghcr.io/hyperpuncher/chough:latest
-    
+
     # Or build locally from source:
     # build: .
-    
+
     container_name: chough
     ports:
       - "8080:8080"
@@ -22,7 +22,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s  # Give time for initial model download
+      start_period: 60s # Give time for initial model download
 
 volumes:
   chough-models:
