@@ -12,10 +12,11 @@ import (
 func FullText(results []types.ChunkResult) string {
 	parts := make([]string, 0, len(results))
 	for _, r := range results {
-		if strings.TrimSpace(r.Text) == "" {
+		text := strings.TrimSpace(r.Text)
+		if text == "" {
 			continue
 		}
-		parts = append(parts, r.Text)
+		parts = append(parts, text)
 	}
 	return strings.Join(parts, " ")
 }
