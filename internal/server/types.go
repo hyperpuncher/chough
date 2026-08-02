@@ -1,21 +1,18 @@
 package server
 
 import (
-	"time"
+	"context"
 
-	"github.com/hyperpuncher/chough/internal/asr"
 	"github.com/hyperpuncher/chough/internal/types"
 )
 
 // Job represents a transcription job
 type Job struct {
-	ID        string
+	Context   context.Context
 	FilePath  string
-	Format    string
 	ChunkSize int
 	Result    chan JobResult
 	Error     chan error
-	StartTime time.Time
 }
 
 // JobResult holds the result of a transcription job
@@ -31,8 +28,8 @@ type JobResult struct {
 type TranscribeRequest struct {
 	URL       string `json:"url,omitempty"`
 	Base64    string `json:"base64,omitempty"`
-	Format    string `json:"format"`     // text, json, vtt
-	ChunkSize int    `json:"chunk_size"` // seconds
+	Format    string `json:"format"`               // text, json, vtt
+	ChunkSize *int   `json:"chunk_size,omitempty"` // seconds
 }
 
 // TranscribeResponse represents a transcription response
@@ -84,10 +81,4 @@ type RecognizerPool interface {
 	BusyWorkers() int
 	TotalWorkers() int
 	Shutdown()
-}
-
-// Recognizer is the interface for ASR recognizer
-type Recognizer interface {
-	Transcribe(audioPath string) (*asr.Result, error)
-	Close()
 }

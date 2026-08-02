@@ -147,6 +147,9 @@ func parseCLI(args []string) (cliOptions, error) {
 	if opts.ShowVersion || opts.ServerMode {
 		return opts, nil
 	}
+	if opts.ChunkSize <= 0 {
+		return cliOptions{}, fmt.Errorf("%w: chunk size must be positive", errInvalidArgs)
+	}
 
 	if fs.NArg() < 1 {
 		// Check if stdin has data for pipe mode

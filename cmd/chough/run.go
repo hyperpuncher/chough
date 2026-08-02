@@ -1,21 +1,21 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/hyperpuncher/chough/internal/asr"
-	"github.com/hyperpuncher/chough/internal/audio"
 	"github.com/hyperpuncher/chough/internal/models"
 	"github.com/hyperpuncher/chough/internal/output"
+	"github.com/hyperpuncher/chough/internal/transcribe"
 	"github.com/hyperpuncher/chough/internal/types"
 )
 
-func run(args []string) error {
+func run(ctx context.Context, args []string) error {
 	opts, err := parseCLI(args)
 	if err != nil {
 		switch {
@@ -36,7 +36,7 @@ func run(args []string) error {
 
 	// Server mode
 	if opts.ServerMode {
-		return runServer(&opts)
+		return runServer(ctx, &opts)
 	}
 
 	// Handle stdin input by copying to temp file
@@ -81,19 +81,19 @@ func run(args []string) error {
 		}
 		defer recognizer.Close()
 
-		duration, err = audio.ProbeDuration(audioFile)
+		service := transcribe.NewService(recognizer)
+		transcription, err := transcribeLocal(ctx, service, audioFile, opts.ChunkSize, opts.Format)
 		if err != nil {
-			return fmt.Errorf("failed to get duration: %w", err)
+			return err
 		}
+		results = transcription.Chunks
+		duration = transcription.Duration
+		elapsed := transcription.ProcessingTime
 
-		boundaries := audio.BuildBoundaries(duration, opts.ChunkSize)
-		fmt.Fprintf(os.Stderr, "audio: %.1fs %s•%s chunks: %ds %s•%s format: %s\n",
-			duration, dim, reset, opts.ChunkSize, dim, reset, opts.Format)
-
-		var elapsed time.Duration
-		results, elapsed = transcribeAudio(recognizer, audioFile, boundaries)
-
-		rtFactor := duration / elapsed.Seconds()
+		rtFactor := 0.0
+		if elapsed > 0 && duration > 0 {
+			rtFactor = duration / elapsed.Seconds()
+		}
 		rtColor := green
 		if rtFactor < 10 {
 			rtColor = yellow
@@ -106,12 +106,16 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer closeFn()
 
-	if err := output.Write(out, opts.Format, results, duration); err != nil {
-		return fmt.Errorf("error writing output: %w", err)
+	writeErr := output.Write(out, opts.Format, results, duration)
+	closeErr := closeFn()
+	if writeErr != nil {
+		writeErr = fmt.Errorf("error writing output: %w", writeErr)
 	}
-	return nil
+	if closeErr != nil {
+		closeErr = fmt.Errorf("error closing output: %w", closeErr)
+	}
+	return errors.Join(writeErr, closeErr)
 }
 
 func loadRecognizer() (*asr.Recognizer, error) {
@@ -135,45 +139,35 @@ func loadRecognizer() (*asr.Recognizer, error) {
 	return recognizer, nil
 }
 
-func transcribeAudio(recognizer *asr.Recognizer, audioFile string, boundaries []float64) ([]types.ChunkResult, time.Duration) {
-	startTime := time.Now()
-	results := make([]types.ChunkResult, 0, len(boundaries)-1)
-	total := len(boundaries) - 1
-
+func transcribeLocal(ctx context.Context, service *transcribe.Service, audioFile string, chunkSize int, format string) (transcribe.Result, error) {
 	hideCursor()
 	defer showCursor()
 
-	for i := 0; i < total; i++ {
-		chunkStart := boundaries[i]
-		chunkEnd := boundaries[i+1]
-
-		elapsed := time.Since(startTime)
-		percent := float64(i+1) / float64(total)
-		eta := time.Duration(float64(elapsed)/percent - float64(elapsed))
-		fmt.Fprint(os.Stderr, renderProgressLine(i+1, total, eta))
-
-		result, err := transcribeChunk(recognizer, audioFile, chunkStart, chunkEnd-chunkStart)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, renderProgressErrorLine(i+1, total, time.Since(startTime), err))
-			continue
-		}
-
-		results = append(results, types.ChunkResult{
-			StartTime:  chunkStart,
-			EndTime:    chunkEnd,
-			Text:       result.Text,
-			Timestamps: result.Timestamps,
-			Tokens:     result.Tokens,
-		})
+	result, err := service.Transcribe(ctx, audioFile, transcribe.Options{
+		ChunkSize: chunkSize,
+		Progress: func(progress transcribe.Progress) {
+			if progress.Completed == 0 {
+				fmt.Fprintf(os.Stderr, "audio: %.1fs %s•%s chunks: %ds %s•%s format: %s\n",
+					progress.Duration, dim, reset, chunkSize, dim, reset, format)
+				return
+			}
+			percent := float64(progress.Completed) / float64(progress.Total)
+			eta := time.Duration(float64(progress.Elapsed)/percent - float64(progress.Elapsed))
+			fmt.Fprint(os.Stderr, renderProgressLine(progress.Completed, progress.Total, eta))
+		},
+	})
+	if err != nil {
+		return transcribe.Result{}, err
 	}
-
-	fmt.Fprintln(os.Stderr, renderProgressLine(total, total, 0))
-	return results, time.Since(startTime)
+	if len(result.Chunks) > 0 {
+		fmt.Fprintln(os.Stderr, renderProgressLine(len(result.Chunks), len(result.Chunks), 0))
+	}
+	return result, nil
 }
 
-func openOutput(path string) (io.Writer, func(), error) {
+func openOutput(path string) (io.Writer, func() error, error) {
 	if path == "" {
-		return os.Stdout, func() {}, nil
+		return os.Stdout, func() error { return nil }, nil
 	}
 
 	file, err := os.Create(path)
@@ -181,22 +175,7 @@ func openOutput(path string) (io.Writer, func(), error) {
 		return nil, nil, fmt.Errorf("error creating output file: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "Output: %s\n", path)
-	return file, func() { file.Close() }, nil
-}
-
-func transcribeChunk(recognizer *asr.Recognizer, audioFile string, start, duration float64) (*asr.Result, error) {
-	tmpDir, err := os.MkdirTemp("", "chough-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(tmpDir)
-
-	chunkFile := filepath.Join(tmpDir, "chunk.wav")
-	if err := audio.ExtractChunkWAV(audioFile, chunkFile, start, duration); err != nil {
-		return nil, err
-	}
-
-	return recognizer.Transcribe(chunkFile)
+	return file, file.Close, nil
 }
 
 // copyStdinToTemp reads all data from stdin and writes it to a temporary file.

@@ -4,15 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/hyperpuncher/chough/internal/server"
+	"github.com/hyperpuncher/chough/internal/transcribe"
 	"github.com/hyperpuncher/chough/internal/worker"
 )
 
-func runServer(opts *cliOptions) error {
+func runServer(ctx context.Context, opts *cliOptions) error {
 	// Load model
 	hideCursor()
 	defer showCursor()
@@ -34,7 +33,8 @@ func runServer(opts *cliOptions) error {
 		Workers:      opts.Workers,
 		MaxQueueSize: 10,
 	}
-	pool := worker.NewPool(opts.Workers, 10, recognizer)
+	service := transcribe.NewService(recognizer)
+	pool := worker.NewPool(opts.Workers, 10, service)
 	defer pool.Shutdown()
 
 	// Create HTTP server
@@ -52,16 +52,13 @@ func runServer(opts *cliOptions) error {
 		errChan <- srv.Start()
 	}()
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
 	select {
 	case err := <-errChan:
 		return err
-	case <-sigChan:
+	case <-ctx.Done():
 		fmt.Fprintln(os.Stderr, "\n⚠️  Shutting down...")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return srv.Shutdown(ctx)
+		return srv.Shutdown(shutdownCtx)
 	}
 }

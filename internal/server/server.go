@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -94,14 +95,14 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create job
+	jobCtx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
 	job := &Job{
-		ID:        strconv.FormatInt(time.Now().UnixNano(), 10),
+		Context:   jobCtx,
 		FilePath:  filePath,
-		Format:    format,
 		ChunkSize: chunkSize,
 		Result:    make(chan JobResult, 1),
 		Error:     make(chan error, 1),
-		StartTime: time.Now(),
 	}
 
 	// Submit to pool
@@ -115,9 +116,18 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	case result := <-job.Result:
 		s.sendFormattedResponse(w, format, result)
 	case err := <-job.Error:
-		s.sendError(w, http.StatusInternalServerError, err.Error())
-	case <-time.After(10 * time.Minute):
-		s.sendError(w, http.StatusRequestTimeout, "transcription timeout")
+		switch {
+		case errors.Is(err, context.Canceled):
+			return
+		case errors.Is(err, context.DeadlineExceeded):
+			s.sendError(w, http.StatusRequestTimeout, "transcription timeout")
+		default:
+			s.sendError(w, http.StatusInternalServerError, err.Error())
+		}
+	case <-jobCtx.Done():
+		if jobCtx.Err() == context.DeadlineExceeded {
+			s.sendError(w, http.StatusRequestTimeout, "transcription timeout")
+		}
 	}
 }
 
@@ -181,9 +191,12 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 			format = strings.ToLower(f)
 		}
 		if c := r.FormValue("chunk_size"); c != "" {
-			if n, err := strconv.Atoi(c); err == nil && n > 0 {
-				chunkSize = n
+			n, parseErr := strconv.Atoi(c)
+			if parseErr != nil || n <= 0 {
+				cleanup()
+				return "", "", 0, nil, fmt.Errorf("chunk_size must be a positive integer")
 			}
+			chunkSize = n
 		}
 
 	} else if strings.HasPrefix(contentType, "application/json") {
@@ -233,8 +246,12 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		if req.Format != "" {
 			format = strings.ToLower(req.Format)
 		}
-		if req.ChunkSize > 0 {
-			chunkSize = req.ChunkSize
+		if req.ChunkSize != nil {
+			if *req.ChunkSize <= 0 {
+				cleanup()
+				return "", "", 0, nil, fmt.Errorf("chunk_size must be positive")
+			}
+			chunkSize = *req.ChunkSize
 		}
 
 	} else {

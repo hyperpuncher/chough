@@ -67,12 +67,6 @@ func renderProgressLine(current, total int, eta time.Duration) string {
 	return fmt.Sprintf("\r%s %sETA %s%s\033[K", bar, dim, etaText, reset)
 }
 
-func renderProgressErrorLine(current, total int, eta time.Duration, err error) string {
-	etaText := formatETA(eta)
-	bar := renderProgressBar(current, total, progressBarWidthForETA(etaText))
-	return fmt.Sprintf("\r%s %sETA %s ERR: %v%s", bar, dim, etaText, err, reset)
-}
-
 func hideCursor() {
 	if isStderrTTY() {
 		fmt.Fprint(os.Stderr, "\033[?25l")
