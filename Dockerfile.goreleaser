@@ -1,7 +1,15 @@
 FROM debian:stable-slim
 
-# Install ffmpeg and ca-certificates
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid 10001 chough \
+    && useradd --uid 10001 --gid 10001 --shell /usr/sbin/nologin chough \
+    && mkdir -p /home/chough/.cache/chough/models \
+    && chown -R chough:chough /home/chough
+
+ENV XDG_CACHE_HOME=/home/chough/.cache
 
 # Copy binary and sidecar runtime libs to /opt/chough/.
 # Keep explicit paths so goreleaser's docker context layout is stable.
@@ -10,9 +18,9 @@ COPY .tmp-libbundle/current/linux_amd64/libonnxruntime.so /opt/chough/
 COPY .tmp-libbundle/current/linux_amd64/libsherpa-onnx-c-api.so /opt/chough/
 COPY .tmp-libbundle/current/linux_amd64/libsherpa-onnx-cxx-api.so /opt/chough/
 
-# Expose server port
 EXPOSE 8080
 
-# Run server
+USER chough
+
 ENTRYPOINT ["/opt/chough/chough"]
 CMD ["--server", "--host", "0.0.0.0", "--port", "8080"]

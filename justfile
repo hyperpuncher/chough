@@ -14,14 +14,14 @@ build:
 release-check:
     goreleaser check
 
-# Local snapshot using goreleaser-cross container (publishing disabled)
+# Local archive snapshot using goreleaser-cross (publishing and Docker disabled)
 release-cross-snapshot:
     docker run --rm \
       -v "$PWD":/work \
       -w /work \
       --entrypoint /bin/sh \
       ghcr.io/goreleaser/goreleaser-cross:latest \
-      -lc 'apt-get update >/dev/null && apt-get install -y patchelf >/dev/null && go mod download && goreleaser release --snapshot --clean --skip=publish --skip=announce --skip=aur --skip=winget'
+      -lc 'apt-get update >/dev/null && apt-get install -y patchelf >/dev/null && git config --global --add safe.directory /work && go mod download && goreleaser release --snapshot --clean --skip=publish --skip=announce --skip=aur --skip=winget --skip=docker'
 
 # Run the CLI with test file
 dev *ARGS:

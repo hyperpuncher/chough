@@ -1,24 +1,16 @@
 services:
   chough:
-    # Use pre-built image from GitHub Container Registry
     image: ghcr.io/hyperpuncher/chough:latest
-
-    # Or build locally from source:
-    # build: .
 
     container_name: chough
     ports:
       - "8080:8080"
-    environment:
-      # Optional: specify custom model path inside container
-      # CHOUGH_MODEL: /models
-      - CHOUGH_MODEL=/root/.cache/chough/models
     volumes:
       # Persist model cache to avoid re-downloading ~650MB on restart
-      - chough-models:/root/.cache/chough/models
+      - chough-models:/home/chough/.cache/chough/models
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3

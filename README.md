@@ -144,12 +144,13 @@ curl http://localhost:8080/health
 ### Docker
 
 ```bash
-# Build and run
-docker build -t chough .
-docker run -d -p 8080:8080 chough
+# Run the published image
+docker run -d -p 8080:8080 \
+  -v chough-models:/home/chough/.cache/chough/models \
+  ghcr.io/hyperpuncher/chough:latest
 
-# Or use docker-compose
-docker-compose up -d
+# Or use Docker Compose
+docker compose up -d
 ```
 
 ## Environment
