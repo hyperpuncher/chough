@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"mime/multipart"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hyperpuncher/chough/internal/types"
 )
 
 type capturePool struct {
@@ -180,6 +183,30 @@ func TestHandleTranscribeRejectsOversizedRequestBody(t *testing.T) {
 	server.handleTranscribe(response, request)
 	if response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+func TestJSONResponseIncludesOptionalTokenData(t *testing.T) {
+	server := &Server{}
+	response := httptest.NewRecorder()
+	if err := server.sendFormattedResponse(response, "json", JobResult{
+		Text: "hello",
+		Chunks: []types.ChunkResult{{
+			Text:      "hello",
+			Tokens:    []string{"hello"},
+			Durations: []float32{0.4},
+			LogProbs:  []float32{-0.2},
+		}},
+	}); err != nil {
+		t.Fatalf("sendFormattedResponse() error = %v", err)
+	}
+
+	var parsed TranscribeResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if len(parsed.Chunks) != 1 || len(parsed.Chunks[0].Durations) != 1 || len(parsed.Chunks[0].LogProbs) != 1 {
+		t.Fatalf("optional token data missing: %+v", parsed.Chunks)
 	}
 }
 

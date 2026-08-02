@@ -160,7 +160,9 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	// Wait for result
 	select {
 	case result := <-job.Result:
-		s.sendFormattedResponse(w, format, result)
+		if err := s.sendFormattedResponse(w, format, result); err != nil {
+			fmt.Fprintf(os.Stderr, "write transcription response: %v\n", err)
+		}
 	case err := <-job.Error:
 		switch {
 		case errors.Is(err, context.Canceled):
@@ -362,9 +364,13 @@ func copyToTemp(pattern string, source io.Reader, maxBytes int64) (path string, 
 }
 
 func (s *Server) sendJSON(w http.ResponseWriter, status int, data interface{}) {
+	_ = writeJSON(w, status, data)
+}
+
+func writeJSON(w http.ResponseWriter, status int, data interface{}) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	return json.NewEncoder(w).Encode(data)
 }
 
 func (s *Server) sendError(w http.ResponseWriter, status int, message string) {
@@ -374,18 +380,19 @@ func (s *Server) sendError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
-func (s *Server) sendFormattedResponse(w http.ResponseWriter, format string, result JobResult) {
+func (s *Server) sendFormattedResponse(w http.ResponseWriter, format string, result JobResult) error {
 	switch format {
 	case "text":
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintln(w, result.Text)
+		_, err := fmt.Fprintln(w, result.Text)
+		return err
 	case "vtt":
 		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_ = output.WriteVTT(w, result.Chunks)
-	default: // json
-		s.sendJSON(w, http.StatusOK, TranscribeResponse{
+		return output.WriteVTT(w, result.Chunks)
+	case "json":
+		return writeJSON(w, http.StatusOK, TranscribeResponse{
 			Success:        true,
 			Duration:       result.Duration,
 			ProcessingTime: result.ProcessingTime,
@@ -393,5 +400,7 @@ func (s *Server) sendFormattedResponse(w http.ResponseWriter, format string, res
 			Text:           result.Text,
 			Chunks:         result.Chunks,
 		})
+	default:
+		return fmt.Errorf("unsupported response format %q", format)
 	}
 }

@@ -107,15 +107,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	writeErr := output.Write(out, opts.Format, results, duration)
-	closeErr := closeFn()
-	if writeErr != nil {
-		writeErr = fmt.Errorf("error writing output: %w", writeErr)
-	}
-	if closeErr != nil {
-		closeErr = fmt.Errorf("error closing output: %w", closeErr)
-	}
-	return errors.Join(writeErr, closeErr)
+	return writeAndCloseOutput(out, closeFn, opts.Format, results, duration)
 }
 
 func loadRecognizer(ctx context.Context) (*asr.Recognizer, error) {
@@ -193,6 +185,18 @@ func transcribeLocal(ctx context.Context, service *transcribe.Service, audioFile
 		fmt.Fprintln(os.Stderr, renderProgressLine(len(result.Chunks), len(result.Chunks), 0))
 	}
 	return result, nil
+}
+
+func writeAndCloseOutput(out io.Writer, closeFn func() error, format string, results []types.ChunkResult, duration float64) error {
+	writeErr := output.Write(out, format, results, duration)
+	closeErr := closeFn()
+	if writeErr != nil {
+		writeErr = fmt.Errorf("error writing output: %w", writeErr)
+	}
+	if closeErr != nil {
+		closeErr = fmt.Errorf("error closing output: %w", closeErr)
+	}
+	return errors.Join(writeErr, closeErr)
 }
 
 func openOutput(path string) (io.Writer, func() error, error) {
