@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hyperpuncher/chough/internal/asr"
 )
@@ -168,6 +171,53 @@ func TestServiceStopsBeforeNextChunkWhenCanceled(t *testing.T) {
 	}
 	if recognizer.calls != 1 || len(processor.chunks) != 1 {
 		t.Fatalf("calls after cancellation: recognizer=%d chunks=%d", recognizer.calls, len(processor.chunks))
+	}
+}
+
+type concurrentRecognizer struct {
+	active    atomic.Int32
+	maxActive atomic.Int32
+}
+
+func (r *concurrentRecognizer) Transcribe(string) (*asr.Result, error) {
+	active := r.active.Add(1)
+	for {
+		maxActive := r.maxActive.Load()
+		if active <= maxActive || r.maxActive.CompareAndSwap(maxActive, active) {
+			break
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	r.active.Add(-1)
+	return &asr.Result{Text: "ok"}, nil
+}
+
+type staticAudioProcessor struct{}
+
+func (staticAudioProcessor) ProbeDuration(context.Context, string) (float64, error) {
+	return 1, nil
+}
+
+func (staticAudioProcessor) ExtractChunkWAV(context.Context, string, string, float64, float64) error {
+	return nil
+}
+
+func TestServiceSerializesRecognizerCalls(t *testing.T) {
+	recognizer := &concurrentRecognizer{}
+	service := NewService(recognizer, staticAudioProcessor{})
+	var wait sync.WaitGroup
+	wait.Add(2)
+	for range 2 {
+		go func() {
+			defer wait.Done()
+			if _, err := service.Transcribe(context.Background(), "audio.mp3", Options{ChunkSize: 60}); err != nil {
+				t.Errorf("Transcribe() error = %v", err)
+			}
+		}()
+	}
+	wait.Wait()
+	if maxActive := recognizer.maxActive.Load(); maxActive != 1 {
+		t.Fatalf("maximum concurrent recognizer calls = %d, want 1", maxActive)
 	}
 }
 

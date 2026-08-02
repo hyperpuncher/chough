@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,22 +19,31 @@ import (
 	"github.com/hyperpuncher/chough/internal/output"
 )
 
+var errUploadTooLarge = errors.New("upload exceeds configured limit")
+
 // Server is the HTTP server
 type Server struct {
-	httpServer *http.Server
-	pool       RecognizerPool
-	options    *ServerOptions
-	version    string
-	startTime  time.Time
+	httpServer     *http.Server
+	pool           RecognizerPool
+	options        *ServerOptions
+	version        string
+	startTime      time.Time
+	urlPolicy      *urlPolicy
+	downloadClient *http.Client
+	admission      chan struct{}
 }
 
 // NewServer creates a new HTTP server
 func NewServer(options *ServerOptions, pool RecognizerPool, version string) *Server {
+	policy := newURLPolicy(options.AllowPrivateURLs, nil)
 	s := &Server{
-		pool:      pool,
-		options:   options,
-		version:   version,
-		startTime: time.Now(),
+		pool:           pool,
+		options:        options,
+		version:        version,
+		startTime:      time.Now(),
+		urlPolicy:      policy,
+		downloadClient: newDownloadClient(policy),
+		admission:      make(chan struct{}, options.Workers+options.MaxQueueSize),
 	}
 
 	mux := http.NewServeMux()
@@ -42,8 +51,11 @@ func NewServer(options *ServerOptions, pool RecognizerPool, version string) *Ser
 	mux.HandleFunc("/health", s.handleHealth)
 
 	s.httpServer = &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", options.Host, options.Port),
-		Handler: s.withMiddleware(mux),
+		Addr:              net.JoinHostPort(options.Host, strconv.Itoa(options.Port)),
+		Handler:           s.withMiddleware(mux),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	return s
@@ -51,7 +63,11 @@ func NewServer(options *ServerOptions, pool RecognizerPool, version string) *Ser
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
-	return s.httpServer.ListenAndServe()
+	err := s.httpServer.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 // Shutdown gracefully shuts down the server
@@ -59,22 +75,40 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
 }
 
+type responseLogger struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *responseLogger) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *responseLogger) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(data)
+}
+
 func (s *Server) withMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// CORS headers
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		logged := &responseLogger{ResponseWriter: w}
+		started := time.Now()
+		defer func() {
+			status := logged.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			fmt.Fprintf(os.Stderr, "%s %s status=%d remote=%s duration=%s queue=%d busy=%d\n",
+				r.Method, r.URL.Path, status, r.RemoteAddr, time.Since(started), s.pool.QueueSize(), s.pool.BusyWorkers())
+		}()
 
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		// Logging
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		fmt.Fprintf(os.Stderr, "%s %s %s\n", r.Method, r.URL.Path, time.Since(start))
+		next.ServeHTTP(logged, r)
 	})
 }
 
@@ -84,14 +118,26 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	select {
+	case s.admission <- struct{}{}:
+		defer func() { <-s.admission }()
+	default:
+		s.sendError(w, http.StatusServiceUnavailable, "server is at capacity")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, s.options.maxRequestBodyBytes(r.Header.Get("Content-Type")))
+
 	// Parse request
 	filePath, format, chunkSize, cleanup, err := s.parseRequest(r)
 	if err != nil {
-		s.sendError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		var maxBytesError *http.MaxBytesError
+		if errors.Is(err, errUploadTooLarge) || errors.As(err, &maxBytesError) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		s.sendError(w, status, err.Error())
 		return
-	}
-	if cleanup != nil {
-		defer cleanup()
 	}
 
 	// Create job
@@ -101,12 +147,14 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		Context:   jobCtx,
 		FilePath:  filePath,
 		ChunkSize: chunkSize,
+		Cleanup:   cleanup,
 		Result:    make(chan JobResult, 1),
 		Error:     make(chan error, 1),
 	}
 
 	// Submit to pool
 	if err := s.pool.Submit(job); err != nil {
+		cleanup()
 		s.sendError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
@@ -152,38 +200,36 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSize int, cleanup func(), err error) {
 	format = "text"
 	chunkSize = 60
+	defer func() {
+		if err != nil && cleanup != nil {
+			cleanup()
+			cleanup = nil
+		}
+	}()
 
 	contentType := r.Header.Get("Content-Type")
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		// Handle file upload
-		if err := r.ParseMultipartForm(s.options.MaxUploadMB * 1024 * 1024); err != nil {
+		// Handle file upload. Keep at most 32 MB of multipart data in memory.
+		multipartMemory := min(s.options.maxUploadBytes(), 32*megabyte)
+		if err := r.ParseMultipartForm(multipartMemory); err != nil {
 			return "", "", 0, nil, fmt.Errorf("failed to parse multipart form: %w", err)
 		}
+		defer r.MultipartForm.RemoveAll()
 
 		file, header, err := r.FormFile("file")
 		if err != nil {
 			return "", "", 0, nil, fmt.Errorf("missing file field: %w", err)
 		}
 		defer file.Close()
+		if header.Size > s.options.maxUploadBytes() {
+			return "", "", 0, nil, fmt.Errorf("%w: maximum is %d MB", errUploadTooLarge, s.options.MaxUploadMB)
+		}
 
-		// Save to temp file
-		tmpFile, err := os.CreateTemp("", "chough-upload-*-"+filepath.Base(header.Filename))
+		filePath, _, err = copyToTemp("chough-upload-*", file, s.options.maxUploadBytes())
 		if err != nil {
-			return "", "", 0, nil, fmt.Errorf("failed to create temp file: %w", err)
+			return "", "", 0, nil, fmt.Errorf("save uploaded file: %w", err)
 		}
-
-		if _, err := io.Copy(tmpFile, file); err != nil {
-			tmpFile.Close()
-			os.Remove(tmpFile.Name())
-			return "", "", 0, nil, fmt.Errorf("failed to save file: %w", err)
-		}
-		if err := tmpFile.Close(); err != nil {
-			os.Remove(tmpFile.Name())
-			return "", "", 0, nil, fmt.Errorf("failed to close uploaded file: %w", err)
-		}
-
-		filePath = tmpFile.Name()
 		cleanup = func() { os.Remove(filePath) }
 
 		// Parse additional form fields
@@ -193,7 +239,6 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		if c := r.FormValue("chunk_size"); c != "" {
 			n, parseErr := strconv.Atoi(c)
 			if parseErr != nil || n <= 0 {
-				cleanup()
 				return "", "", 0, nil, fmt.Errorf("chunk_size must be a positive integer")
 			}
 			chunkSize = n
@@ -202,41 +247,35 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 	} else if strings.HasPrefix(contentType, "application/json") {
 		// Handle JSON request (URL or base64)
 		var req TranscribeRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		if err := decoder.Decode(&req); err != nil {
 			return "", "", 0, nil, fmt.Errorf("invalid JSON: %w", err)
+		}
+		if err := decoder.Decode(&struct{}{}); err != io.EOF {
+			return "", "", 0, nil, fmt.Errorf("invalid JSON: expected one object")
 		}
 
 		if req.URL != "" {
 			// Download from URL
-			filePath, err = s.downloadFromURL(req.URL)
+			filePath, err = s.downloadFromURL(r.Context(), req.URL)
 			if err != nil {
 				return "", "", 0, nil, err
 			}
 			cleanup = func() { os.Remove(filePath) }
 
 		} else if req.Base64 != "" {
-			// Decode base64
-			data, err := base64.StdEncoding.DecodeString(req.Base64)
+			maxEncoded := (s.options.maxUploadBytes() + 2) / 3 * 4
+			if int64(len(req.Base64)) > maxEncoded {
+				return "", "", 0, nil, fmt.Errorf("%w: maximum is %d MB", errUploadTooLarge, s.options.MaxUploadMB)
+			}
+			decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(req.Base64))
+			filePath, _, err = copyToTemp("chough-b64-*", decoder, s.options.maxUploadBytes())
 			if err != nil {
+				if errors.Is(err, errUploadTooLarge) {
+					return "", "", 0, nil, err
+				}
 				return "", "", 0, nil, fmt.Errorf("invalid base64: %w", err)
 			}
-
-			tmpFile, err := os.CreateTemp("", "chough-b64-*")
-			if err != nil {
-				return "", "", 0, nil, fmt.Errorf("failed to create temp file: %w", err)
-			}
-
-			if _, err := tmpFile.Write(data); err != nil {
-				tmpFile.Close()
-				os.Remove(tmpFile.Name())
-				return "", "", 0, nil, fmt.Errorf("failed to write file: %w", err)
-			}
-			if err := tmpFile.Close(); err != nil {
-				os.Remove(tmpFile.Name())
-				return "", "", 0, nil, fmt.Errorf("failed to close decoded file: %w", err)
-			}
-
-			filePath = tmpFile.Name()
 			cleanup = func() { os.Remove(filePath) }
 
 		} else {
@@ -248,7 +287,6 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		}
 		if req.ChunkSize != nil {
 			if *req.ChunkSize <= 0 {
-				cleanup()
 				return "", "", 0, nil, fmt.Errorf("chunk_size must be positive")
 			}
 			chunkSize = *req.ChunkSize
@@ -260,59 +298,69 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 
 	// Validate format
 	if format != "text" && format != "json" && format != "vtt" {
-		if cleanup != nil {
-			cleanup()
-		}
 		return "", "", 0, nil, fmt.Errorf("invalid format: %s (must be text, json, or vtt)", format)
 	}
 
 	return filePath, format, chunkSize, cleanup, nil
 }
 
-func (s *Server) downloadFromURL(url string) (string, error) {
-	client := &http.Client{
-		Timeout: 5 * time.Minute,
-	}
-
-	resp, err := client.Get(url)
+func (s *Server) downloadFromURL(ctx context.Context, rawURL string) (string, error) {
+	parsed, err := s.urlPolicy.validate(ctx, rawURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to download: %w", err)
+		return "", err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("create download request: %w", err)
+	}
+	resp, err := s.downloadClient.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("download failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download failed: %s", resp.Status)
 	}
-
-	// Check size
-	if resp.ContentLength > s.options.MaxUploadMB*1024*1024 {
-		return "", fmt.Errorf("file too large (max %d MB)", s.options.MaxUploadMB)
+	if resp.ContentLength > s.options.maxUploadBytes() {
+		return "", fmt.Errorf("%w: maximum is %d MB", errUploadTooLarge, s.options.MaxUploadMB)
 	}
 
-	tmpFile, err := os.CreateTemp("", "chough-url-*")
+	filePath, written, err := copyToTemp("chough-url-*", resp.Body, s.options.maxUploadBytes())
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
+		return "", fmt.Errorf("download failed: %w", err)
 	}
-
-	written, err := io.Copy(tmpFile, io.LimitReader(resp.Body, s.options.MaxUploadMB*1024*1024))
-	if err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("failed to download: %w", err)
-	}
-
-	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("failed to close file: %w", err)
-	}
-
-	// Validate minimum size
-	if written < 44 { // Minimum WAV header size
-		os.Remove(tmpFile.Name())
+	if written < 44 {
+		os.Remove(filePath)
 		return "", fmt.Errorf("downloaded file too small")
 	}
+	return filePath, nil
+}
 
-	return tmpFile.Name(), nil
+func copyToTemp(pattern string, source io.Reader, maxBytes int64) (path string, written int64, err error) {
+	tmpFile, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", 0, fmt.Errorf("create temporary file: %w", err)
+	}
+	path = tmpFile.Name()
+	defer func() {
+		if err != nil {
+			tmpFile.Close()
+			os.Remove(path)
+		}
+	}()
+
+	written, err = io.Copy(tmpFile, io.LimitReader(source, maxBytes+1))
+	if err != nil {
+		return "", 0, err
+	}
+	if written > maxBytes {
+		return "", 0, errUploadTooLarge
+	}
+	if err = tmpFile.Close(); err != nil {
+		return "", 0, fmt.Errorf("close temporary file: %w", err)
+	}
+	return path, written, nil
 }
 
 func (s *Server) sendJSON(w http.ResponseWriter, status int, data interface{}) {

@@ -36,11 +36,13 @@ type cliOptions struct {
 	RemoteMode  bool
 
 	// Server mode
-	ServerMode  bool
-	ServerHost  string
-	ServerPort  int
-	Workers     int
-	MaxUploadMB int
+	ServerMode       bool
+	ServerHost       string
+	ServerPort       int
+	Workers          int
+	QueueSize        int
+	MaxUploadMB      int
+	AllowPrivateURLs bool
 }
 
 type cliFlag struct {
@@ -69,8 +71,10 @@ var serverFlags = []cliFlag{
 	{long: "server", description: "run in server mode"},
 	{long: "host", arg: "string", description: "server host", defaultVal: "0.0.0.0"},
 	{long: "port", arg: "int", description: "server port", defaultVal: "8080"},
-	{long: "workers", arg: "int", description: "concurrent workers", defaultVal: "2"},
+	{long: "workers", arg: "int", description: "concurrent preparation workers", defaultVal: "2"},
+	{long: "queue-size", arg: "int", description: "maximum queued requests", defaultVal: "10"},
 	{long: "max-upload", arg: "int", description: "max upload size in MB", defaultVal: "1024"},
+	{long: "allow-private-urls", description: "allow URL downloads from private networks"},
 }
 
 func init() {
@@ -117,8 +121,10 @@ func parseCLI(args []string) (cliOptions, error) {
 	serverMode := fs.Bool("server", false, "run in server mode")
 	serverHost := fs.String("host", "0.0.0.0", "server host")
 	serverPort := fs.Int("port", 8080, "server port")
-	workers := fs.Int("workers", 2, "concurrent workers")
+	workers := fs.Int("workers", 2, "concurrent preparation workers")
+	queueSize := fs.Int("queue-size", 10, "maximum queued requests")
 	maxUploadMB := fs.Int("max-upload", 1024, "max upload size in MB")
+	allowPrivateURLs := fs.Bool("allow-private-urls", false, "allow URL downloads from private networks")
 
 	fs.Usage = func() {
 		printUsage()
@@ -132,16 +138,18 @@ func parseCLI(args []string) (cliOptions, error) {
 	}
 
 	opts := cliOptions{
-		ChunkSize:   *chunkSize,
-		Format:      strings.ToLower(*format),
-		OutputFile:  *outputFile,
-		ShowVersion: *showVersion,
-		RemoteMode:  *remoteMode,
-		ServerMode:  *serverMode,
-		ServerHost:  *serverHost,
-		ServerPort:  *serverPort,
-		Workers:     *workers,
-		MaxUploadMB: *maxUploadMB,
+		ChunkSize:        *chunkSize,
+		Format:           strings.ToLower(*format),
+		OutputFile:       *outputFile,
+		ShowVersion:      *showVersion,
+		RemoteMode:       *remoteMode,
+		ServerMode:       *serverMode,
+		ServerHost:       *serverHost,
+		ServerPort:       *serverPort,
+		Workers:          *workers,
+		QueueSize:        *queueSize,
+		MaxUploadMB:      *maxUploadMB,
+		AllowPrivateURLs: *allowPrivateURLs,
 	}
 
 	if opts.ShowVersion || opts.ServerMode {

@@ -37,10 +37,12 @@ func TestPoolUsesSharedTranscriptionService(t *testing.T) {
 	pool := NewPool(1, 1, service)
 	defer pool.Shutdown()
 
+	cleaned := make(chan struct{})
 	job := &server.Job{
 		Context:   context.Background(),
 		FilePath:  "audio.mp3",
 		ChunkSize: 60,
+		Cleanup:   func() { close(cleaned) },
 		Result:    make(chan server.JobResult, 1),
 		Error:     make(chan error, 1),
 	}
@@ -57,5 +59,10 @@ func TestPoolUsesSharedTranscriptionService(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for worker result")
+	}
+	select {
+	case <-cleaned:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not clean up accepted job")
 	}
 }

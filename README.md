@@ -93,12 +93,14 @@ CHOUGH_URL=http://localhost:8080 chough --remote audio.mp3
 
 Run `chough` as an HTTP server for API access. The server keeps the model loaded in memory (~1.6GB), eliminating the ~1.5s startup time per request.
 
+Server mode listens on all network interfaces by default for LAN use. It does not provide authentication or TLS, so do not expose it directly to the public internet; use a trusted reverse proxy if public access is required.
+
 ```bash
 # Start server
 chough --server --port 8080
 
 # With custom settings
-chough --server --host 0.0.0.0 --port 8080 --workers 2
+chough --server --host 0.0.0.0 --port 8080 --workers 2 --queue-size 10
 ```
 
 ### API Endpoints
@@ -117,7 +119,7 @@ curl -X POST http://localhost:8080/transcribe \
   -F "format=json" \
   -F "chunk_size=60"
 
-# Transcribe from URL
+# Transcribe from a public URL
 curl -X POST http://localhost:8080/transcribe \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com/audio.mp3", "format": "vtt"}'
@@ -133,13 +135,17 @@ curl http://localhost:8080/health
 
 ### Server Flags
 
-| Flag           | Description          | Default |
-| -------------- | -------------------- | ------- |
-| `--server`     | Run in server mode   | -       |
-| `--host`       | Server host          | 0.0.0.0 |
-| `--port`       | Server port          | 8080    |
-| `--workers`    | Concurrent workers   | 2       |
-| `--max-upload` | Max upload size (MB) | 1024    |
+| Flag                   | Description                                | Default |
+| ---------------------- | ------------------------------------------ | ------- |
+| `--server`             | Run in server mode                         | -       |
+| `--host`               | Server host                                | 0.0.0.0 |
+| `--port`               | Server port                                | 8080    |
+| `--workers`            | Concurrent preparation workers             | 2       |
+| `--queue-size`         | Maximum waiting requests                   | 10      |
+| `--max-upload`         | Maximum audio size in MB                   | 1024    |
+| `--allow-private-urls` | Permit URL downloads from private networks | false   |
+
+URL transcription allows public HTTP and HTTPS destinations. Loopback, private, link-local, multicast, and unspecified destinations are blocked unless `--allow-private-urls` is set for trusted homelab sources.
 
 ### Docker
 

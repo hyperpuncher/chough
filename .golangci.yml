@@ -7,5 +7,6 @@ linters:
       exclude-functions:
         - (io.Closer).Close
         - (*os.File).Close
+        - (*mime/multipart.Form).RemoveAll
         - os.Remove
         - os.RemoveAll

@@ -11,6 +11,7 @@ type Job struct {
 	Context   context.Context
 	FilePath  string
 	ChunkSize int
+	Cleanup   func()
 	Result    chan JobResult
 	Error     chan error
 }
@@ -56,11 +57,12 @@ type HealthResponse struct {
 
 // ServerOptions holds server configuration
 type ServerOptions struct {
-	Host         string
-	Port         int
-	MaxUploadMB  int64
-	Workers      int
-	MaxQueueSize int
+	Host             string
+	Port             int
+	MaxUploadMB      int64
+	Workers          int
+	MaxQueueSize     int
+	AllowPrivateURLs bool
 }
 
 // DefaultServerOptions returns default server options

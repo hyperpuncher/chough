@@ -59,8 +59,9 @@ type Result struct {
 
 // Service runs the shared local and server transcription pipeline.
 type Service struct {
-	recognizer Recognizer
-	audio      AudioProcessor
+	recognizer     Recognizer
+	audio          AudioProcessor
+	recognizerSlot chan struct{}
 }
 
 // NewService creates a transcription service. It uses ffmpeg unless a custom
@@ -71,8 +72,9 @@ func NewService(recognizer Recognizer, processors ...AudioProcessor) *Service {
 		processor = processors[0]
 	}
 	return &Service{
-		recognizer: recognizer,
-		audio:      processor,
+		recognizer:     recognizer,
+		audio:          processor,
+		recognizerSlot: make(chan struct{}, 1),
 	}
 }
 
@@ -137,9 +139,9 @@ func (s *Service) Transcribe(ctx context.Context, audioFile string, options Opti
 			return Result{}, err
 		}
 
-		chunk, err := s.recognizer.Transcribe(chunkFile)
-		if err != nil {
-			return Result{}, fmt.Errorf("transcribe chunk %d [%.3fs-%.3fs]: %w", i+1, chunkStart, chunkEnd, err)
+		chunk, transcribeErr := s.transcribeChunk(ctx, chunkFile)
+		if transcribeErr != nil {
+			return Result{}, fmt.Errorf("transcribe chunk %d [%.3fs-%.3fs]: %w", i+1, chunkStart, chunkEnd, transcribeErr)
 		}
 		if chunk == nil {
 			return Result{}, fmt.Errorf("transcribe chunk %d [%.3fs-%.3fs]: recognizer returned no result", i+1, chunkStart, chunkEnd)
@@ -168,4 +170,14 @@ func (s *Service) Transcribe(ctx context.Context, audioFile string, options Opti
 	result.ProcessingTime = time.Since(started)
 	result.Text = output.FullText(result.Chunks)
 	return result, nil
+}
+
+func (s *Service) transcribeChunk(ctx context.Context, chunkFile string) (*asr.Result, error) {
+	select {
+	case s.recognizerSlot <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-s.recognizerSlot }()
+	return s.recognizer.Transcribe(chunkFile)
 }

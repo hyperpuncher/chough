@@ -18,6 +18,8 @@ type Pool struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
+	mu        sync.Mutex
+	closed    bool
 	busyCount atomic.Int32
 }
 
@@ -33,9 +35,9 @@ func NewPool(workers int, queueSize int, service *transcribe.Service) *Pool {
 	}
 
 	// Start workers
-	for i := 0; i < workers; i++ {
+	for range workers {
 		p.wg.Add(1)
-		go p.worker(i)
+		go p.worker()
 	}
 
 	return p
@@ -43,6 +45,20 @@ func NewPool(workers int, queueSize int, service *transcribe.Service) *Pool {
 
 // Submit adds a job to the queue
 func (p *Pool) Submit(job *server.Job) error {
+	if job == nil {
+		return fmt.Errorf("job is required")
+	}
+	if job.Context != nil {
+		if err := job.Context.Err(); err != nil {
+			return err
+		}
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return fmt.Errorf("worker pool is shutting down")
+	}
 	select {
 	case p.queue <- job:
 		return nil
@@ -68,24 +84,31 @@ func (p *Pool) TotalWorkers() int {
 
 // Shutdown stops all workers
 func (p *Pool) Shutdown() {
-	p.cancel()
-	close(p.queue)
+	p.mu.Lock()
+	if !p.closed {
+		p.closed = true
+		p.cancel()
+		close(p.queue)
+	}
+	p.mu.Unlock()
 	p.wg.Wait()
 }
 
-func (p *Pool) worker(id int) {
+func (p *Pool) worker() {
 	defer p.wg.Done()
 
-	for {
-		select {
-		case <-p.ctx.Done():
-			return
-		case job, ok := <-p.queue:
-			if !ok {
-				return
-			}
-			p.processJob(job)
+	for job := range p.queue {
+		if err := p.ctx.Err(); err != nil {
+			p.finishJob(job, server.JobResult{}, err)
+			continue
 		}
+		if job.Context != nil {
+			if err := job.Context.Err(); err != nil {
+				p.finishJob(job, server.JobResult{}, err)
+				continue
+			}
+		}
+		p.processJob(job)
 	}
 }
 
@@ -104,7 +127,7 @@ func (p *Pool) processJob(job *server.Job) {
 
 	result, err := p.service.Transcribe(ctx, job.FilePath, transcribe.Options{ChunkSize: job.ChunkSize})
 	if err != nil {
-		job.Error <- fmt.Errorf("transcription failed: %w", err)
+		p.finishJob(job, server.JobResult{}, fmt.Errorf("transcription failed: %w", err))
 		return
 	}
 
@@ -112,11 +135,23 @@ func (p *Pool) processJob(job *server.Job) {
 	if result.ProcessingTime > 0 && result.Duration > 0 {
 		rtFactor = result.Duration / result.ProcessingTime.Seconds()
 	}
-	job.Result <- server.JobResult{
+	p.finishJob(job, server.JobResult{
 		Duration:       result.Duration,
 		ProcessingTime: result.ProcessingTime.Seconds(),
 		RealtimeFactor: rtFactor,
 		Text:           result.Text,
 		Chunks:         result.Chunks,
+	}, nil)
+}
+
+func (p *Pool) finishJob(job *server.Job, result server.JobResult, err error) {
+	if job.Cleanup != nil {
+		job.Cleanup()
+		job.Cleanup = nil
 	}
+	if err != nil {
+		job.Error <- err
+		return
+	}
+	job.Result <- result
 }

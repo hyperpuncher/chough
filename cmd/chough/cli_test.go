@@ -20,7 +20,7 @@ func TestParseCLIServerDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseCLI() error = %v", err)
 	}
-	if !opts.ServerMode || opts.ServerHost != "0.0.0.0" || opts.ServerPort != 8080 || opts.Workers != 2 || opts.MaxUploadMB != 1024 {
+	if !opts.ServerMode || opts.ServerHost != "0.0.0.0" || opts.ServerPort != 8080 || opts.Workers != 2 || opts.QueueSize != 10 || opts.MaxUploadMB != 1024 || opts.AllowPrivateURLs {
 		t.Fatalf("unexpected server options: %+v", opts)
 	}
 }
