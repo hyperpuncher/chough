@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -21,7 +21,7 @@ jobs:
       - name: Run tests
         uses: actions/setup-go@v6
         with:
-          go-version: 'stable'
+          go-version: "stable"
           check-latest: true
 
       - name: Test
@@ -33,6 +33,24 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          previous_tag=$(git describe --tags --match "v[0-9]*" --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          repository_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+
+          {
+            echo "### What's Changed"
+            echo
+            if [[ -n "$previous_tag" ]]; then
+              git log --reverse --format="- %s [\`%h\`](${repository_url}/commit/%H)" "${previous_tag}..${GITHUB_REF_NAME}"
+              echo
+              echo "**Full Changelog:** [${previous_tag}...${GITHUB_REF_NAME}](${repository_url}/compare/${previous_tag}...${GITHUB_REF_NAME})"
+            else
+              git log --reverse --format="- %s [\`%h\`](${repository_url}/commit/%H)" "$GITHUB_REF_NAME"
+            fi
+          } > /tmp/release-notes.md
 
       - name: Release with goreleaser-cross
         env:
@@ -51,3 +69,8 @@ jobs:
             --entrypoint /bin/sh \
             ghcr.io/goreleaser/goreleaser-cross:latest \
             -lc 'apt-get update >/dev/null && apt-get install -y patchelf >/dev/null && git config --global --add safe.directory /work && go mod download && goreleaser check && goreleaser release --clean'
+
+      - name: Update GitHub release notes
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: /tmp/release-notes.md
