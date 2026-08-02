@@ -156,6 +156,8 @@ func (s *Service) Transcribe(ctx context.Context, audioFile string, options Opti
 			Text:       chunk.Text,
 			Timestamps: chunk.Timestamps,
 			Tokens:     chunk.Tokens,
+			Durations:  alignedTokenValues(chunk.Durations, chunk.Tokens),
+			LogProbs:   alignedTokenValues(chunk.LogProbs, chunk.Tokens),
 		})
 		if options.Progress != nil {
 			options.Progress(Progress{
@@ -170,6 +172,13 @@ func (s *Service) Transcribe(ctx context.Context, audioFile string, options Opti
 	result.ProcessingTime = time.Since(started)
 	result.Text = output.FullText(result.Chunks)
 	return result, nil
+}
+
+func alignedTokenValues(values []float32, tokens []string) []float32 {
+	if len(values) == 0 || len(values) != len(tokens) {
+		return nil
+	}
+	return values
 }
 
 func (s *Service) transcribeChunk(ctx context.Context, chunkFile string) (*asr.Result, error) {

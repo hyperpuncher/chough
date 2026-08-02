@@ -93,6 +93,49 @@ func TestServiceTranscribe(t *testing.T) {
 	}
 }
 
+type resultRecognizer struct {
+	result *asr.Result
+}
+
+func (r resultRecognizer) Transcribe(string) (*asr.Result, error) {
+	return r.result, nil
+}
+
+func TestServiceMapsOnlyAlignedOptionalTokenData(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		durations    []float32
+		logProbs     []float32
+		wantDuration bool
+		wantLogProbs bool
+	}{
+		{name: "aligned", durations: []float32{0.2, 0.3}, logProbs: []float32{-0.1, -0.2}, wantDuration: true, wantLogProbs: true},
+		{name: "mismatched", durations: []float32{0.2}, logProbs: []float32{-0.1, -0.2, -0.3}},
+		{name: "independent fields", durations: []float32{0.2, 0.3}, logProbs: []float32{-0.1}, wantDuration: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewService(resultRecognizer{result: &asr.Result{
+				Text:       "hello world",
+				Tokens:     []string{"hello", " world"},
+				Timestamps: []float32{0, 0.5},
+				Durations:  test.durations,
+				LogProbs:   test.logProbs,
+			}}, &fakeAudioProcessor{duration: 1})
+			result, err := service.Transcribe(context.Background(), "audio.mp3", Options{ChunkSize: 60})
+			if err != nil {
+				t.Fatalf("Transcribe() error = %v", err)
+			}
+			chunk := result.Chunks[0]
+			if got := len(chunk.Durations) > 0; got != test.wantDuration {
+				t.Fatalf("durations present = %v, want %v", got, test.wantDuration)
+			}
+			if got := len(chunk.LogProbs) > 0; got != test.wantLogProbs {
+				t.Fatalf("log probabilities present = %v, want %v", got, test.wantLogProbs)
+			}
+		})
+	}
+}
+
 func TestServiceHandlesZeroDuration(t *testing.T) {
 	processor := &fakeAudioProcessor{duration: 0}
 	recognizer := &fakeRecognizer{}

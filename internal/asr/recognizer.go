@@ -76,6 +76,8 @@ func (r *Recognizer) Transcribe(audioPath string) (*Result, error) {
 		Text:       sherpaResult.Text,
 		Timestamps: sherpaResult.Timestamps,
 		Tokens:     sherpaResult.Tokens,
+		Durations:  sherpaResult.Durations,
+		LogProbs:   sherpaResult.YsLogProbs,
 	}, nil
 }
 
@@ -92,4 +94,6 @@ type Result struct {
 	Text       string
 	Timestamps []float32
 	Tokens     []string
+	Durations  []float32
+	LogProbs   []float32
 }
