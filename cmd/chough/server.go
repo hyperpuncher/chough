@@ -25,17 +25,11 @@ func runServer(ctx context.Context, opts *cliOptions) error {
 	}
 
 	// Load model
-	hideCursor()
-	defer showCursor()
-
-	fmt.Fprint(os.Stderr, "⏳ Loading model...\r")
-	recognizer, err := server.LoadRecognizer()
+	recognizer, err := loadRecognizer(ctx)
 	if err != nil {
-		fmt.Fprintln(os.Stderr)
 		return err
 	}
 	defer recognizer.Close()
-	fmt.Fprintln(os.Stderr, "✅ Model loaded!   ")
 
 	// Create worker pool
 	service := transcribe.NewService(recognizer)

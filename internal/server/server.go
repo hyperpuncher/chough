@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hyperpuncher/chough/internal/asr"
-	"github.com/hyperpuncher/chough/internal/models"
 	"github.com/hyperpuncher/chough/internal/output"
 )
 
@@ -396,19 +394,4 @@ func (s *Server) sendFormattedResponse(w http.ResponseWriter, format string, res
 			Chunks:         result.Chunks,
 		})
 	}
-}
-
-// LoadRecognizer loads the ASR recognizer
-func LoadRecognizer() (*asr.Recognizer, error) {
-	modelPath, err := models.GetModelPath()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get model: %w", err)
-	}
-
-	recognizer, err := asr.NewRecognizer(asr.DefaultConfig(modelPath))
-	if err != nil {
-		return nil, fmt.Errorf("failed to load model: %w", err)
-	}
-
-	return recognizer, nil
 }

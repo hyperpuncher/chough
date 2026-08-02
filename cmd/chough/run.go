@@ -75,7 +75,7 @@ func run(ctx context.Context, args []string) error {
 	} else {
 		fmt.Fprintf(os.Stderr, "mode: %slocal%s\n", cyan, reset)
 
-		recognizer, err := loadRecognizer()
+		recognizer, err := loadRecognizer(ctx)
 		if err != nil {
 			return err
 		}
@@ -118,12 +118,12 @@ func run(ctx context.Context, args []string) error {
 	return errors.Join(writeErr, closeErr)
 }
 
-func loadRecognizer() (*asr.Recognizer, error) {
+func loadRecognizer(ctx context.Context) (*asr.Recognizer, error) {
 	hideCursor()
 	defer showCursor()
 
 	fmt.Fprint(os.Stderr, "⏳ Loading model...\r")
-	modelPath, err := models.GetModelPath()
+	modelPath, err := models.GetModelPathContext(ctx, modelProgress())
 	if err != nil {
 		fmt.Fprintln(os.Stderr)
 		return nil, fmt.Errorf("failed to get model: %w", err)
@@ -137,6 +137,36 @@ func loadRecognizer() (*asr.Recognizer, error) {
 
 	fmt.Fprintln(os.Stderr, "✅ Model loaded!   ")
 	return recognizer, nil
+}
+
+func modelProgress() models.ProgressFunc {
+	lastBucket := -1
+	return func(progress models.Progress) {
+		switch progress.Stage {
+		case "download":
+			if progress.Total <= 0 {
+				return
+			}
+			percent := int(progress.Downloaded * 100 / progress.Total)
+			bucket := min(percent/5, 20)
+			if bucket == lastBucket {
+				return
+			}
+			lastBucket = bucket
+			message := fmt.Sprintf("Downloading model: %.1f / %.1f MB (%d%%)",
+				float64(progress.Downloaded)/(1024*1024), float64(progress.Total)/(1024*1024), percent)
+			if isStderrTTY() {
+				fmt.Fprintf(os.Stderr, "\r%s", message)
+			} else {
+				fmt.Fprintln(os.Stderr, message)
+			}
+		case "extract":
+			if isStderrTTY() && lastBucket >= 0 {
+				fmt.Fprintln(os.Stderr)
+			}
+			fmt.Fprintln(os.Stderr, "Extracting model...")
+		}
+	}
 }
 
 func transcribeLocal(ctx context.Context, service *transcribe.Service, audioFile string, chunkSize int, format string) (transcribe.Result, error) {

@@ -3,6 +3,7 @@ module github.com/hyperpuncher/chough
 go 1.26
 
 require (
+	github.com/gofrs/flock v0.13.0
 	github.com/k2-fsa/sherpa-onnx-go v1.13.4
 	golang.org/x/term v0.45.0
 )
