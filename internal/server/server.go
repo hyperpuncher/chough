@@ -168,7 +168,10 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 			os.Remove(tmpFile.Name())
 			return "", "", 0, nil, fmt.Errorf("failed to save file: %w", err)
 		}
-		tmpFile.Close()
+		if err := tmpFile.Close(); err != nil {
+			os.Remove(tmpFile.Name())
+			return "", "", 0, nil, fmt.Errorf("failed to close uploaded file: %w", err)
+		}
 
 		filePath = tmpFile.Name()
 		cleanup = func() { os.Remove(filePath) }
@@ -215,7 +218,10 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 				os.Remove(tmpFile.Name())
 				return "", "", 0, nil, fmt.Errorf("failed to write file: %w", err)
 			}
-			tmpFile.Close()
+			if err := tmpFile.Close(); err != nil {
+				os.Remove(tmpFile.Name())
+				return "", "", 0, nil, fmt.Errorf("failed to close decoded file: %w", err)
+			}
 
 			filePath = tmpFile.Name()
 			cleanup = func() { os.Remove(filePath) }
@@ -295,7 +301,7 @@ func (s *Server) downloadFromURL(url string) (string, error) {
 func (s *Server) sendJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func (s *Server) sendError(w http.ResponseWriter, status int, message string) {
@@ -310,11 +316,11 @@ func (s *Server) sendFormattedResponse(w http.ResponseWriter, format string, res
 	case "text":
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, result.Text)
+		_, _ = fmt.Fprintln(w, result.Text)
 	case "vtt":
 		w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		output.WriteVTT(w, result.Chunks)
+		_ = output.WriteVTT(w, result.Chunks)
 	default: // json
 		s.sendJSON(w, http.StatusOK, TranscribeResponse{
 			Success:        true,

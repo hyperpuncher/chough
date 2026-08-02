@@ -1,0 +1,11 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Cleanup errors are not actionable. Close errors after writes are checked explicitly.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - os.Remove
+        - os.RemoveAll

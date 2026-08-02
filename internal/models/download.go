@@ -76,6 +76,7 @@ func downloadAndExtract(targetDir string) error {
 		return err
 	}
 	tmpPath := tmpFile.Name()
+	defer tmpFile.Close()
 	defer os.Remove(tmpPath)
 
 	resp, err := http.Get(ModelURL)

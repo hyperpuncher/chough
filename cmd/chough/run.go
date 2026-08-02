@@ -206,11 +206,16 @@ func copyStdinToTemp() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer tmpFile.Close()
-
+	tmpPath := tmpFile.Name()
 	if _, err := io.Copy(tmpFile, os.Stdin); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to copy stdin: %w", err)
 	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to close stdin temp file: %w", err)
+	}
 
-	return tmpFile.Name(), nil
+	return tmpPath, nil
 }

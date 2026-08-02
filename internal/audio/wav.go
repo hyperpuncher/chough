@@ -62,6 +62,10 @@ func ReadWave(filename string) (*Wave, error) {
 
 		switch chunkID {
 		case "fmt ":
+			if chunkSize < 16 {
+				return nil, fmt.Errorf("invalid fmt chunk size: %d", chunkSize)
+			}
+
 			// Read fmt chunk
 			fmtData := make([]byte, chunkSize)
 			if _, err := io.ReadFull(file, fmtData); err != nil {
@@ -87,6 +91,12 @@ func ReadWave(filename string) (*Wave, error) {
 			}
 
 		case "data":
+			if sampleRate == 0 {
+				return nil, fmt.Errorf("data chunk found before fmt chunk")
+			}
+			if chunkSize%2 != 0 {
+				return nil, fmt.Errorf("invalid 16-bit data chunk size: %d", chunkSize)
+			}
 			dataSize = chunkSize
 			// Read the audio data now
 			return readSamples(file, sampleRate, dataSize)
