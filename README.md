@@ -71,7 +71,7 @@ chough -f vtt -o subtitles.vtt lecture.mp4
 # JSON with timestamps
 chough -f json podcast.mp3 > transcript.json
 
-# Smaller chunks for lower memory usage
+# Override the default 20-second chunks
 chough -c 30 long-interview.wav
 
 # Use remote server mode (requires CHOUGH_URL)
@@ -80,18 +80,18 @@ CHOUGH_URL=http://localhost:8080 chough --remote audio.mp3
 
 ### Flags
 
-| Flag               | Description                      | Default |
-| ------------------ | -------------------------------- | ------- |
-| `-c, --chunk-size` | Chunk size in seconds            | 60      |
-| `-f, --format`     | Output format: text, json, vtt   | text    |
-| `-o, --output`     | Output file                      | stdout  |
-| `-r, --remote`     | Transcribe via CHOUGH_URL server | -       |
-| `--version`        | Show version                     | -       |
-| `-h, --help`       | Show help                        | -       |
+| Flag               | Description                         | Default |
+| ------------------ | ----------------------------------- | ------- |
+| `-c, --chunk-size` | Chunk size in seconds (maximum 300) | 20      |
+| `-f, --format`     | Output format: text, json, vtt      | text    |
+| `-o, --output`     | Output file                         | stdout  |
+| `-r, --remote`     | Transcribe via CHOUGH_URL server    | -       |
+| `--version`        | Show version                        | -       |
+| `-h, --help`       | Show help                           | -       |
 
 ## Server Mode
 
-Run `chough` as an HTTP server for API access. The server keeps the model loaded in memory (~1.6GB), eliminating the ~1.5s startup time per request.
+Run `chough` as an HTTP server for API access. The server keeps the model loaded in memory, eliminating the ~1.6s startup time per request.
 
 Server mode listens on all network interfaces by default for LAN use. It does not provide authentication, TLS, CORS policy, or rate limiting. Do not expose it directly to the public internet; use a trusted reverse proxy when those controls are required.
 
@@ -116,8 +116,7 @@ chough --server --host 0.0.0.0 --port 8080 --workers 2 --queue-size 10
 # Upload file
 curl -X POST http://localhost:8080/transcribe \
   -F "file=@audio.mp3" \
-  -F "format=json" \
-  -F "chunk_size=60"
+  -F "format=json"
 
 # Transcribe from a public URL
 curl -X POST http://localhost:8080/transcribe \
@@ -192,10 +191,11 @@ Models are automatically downloaded under the operating system's user cache dire
 ## How it works
 
 1. Loads the ONNX model once per process.
-2. Probes the source and divides it into configurable chunks.
-3. Uses ffmpeg to normalize each chunk to 16kHz mono WAV.
-4. Transcribes every chunk, failing the operation if any chunk fails.
-5. Combines the chunks and writes text, JSON, or WebVTT.
+2. Probes the source and divides it into configurable chunks, using 20 seconds by default.
+3. Uses ffmpeg to normalize each chunk to 16kHz mono WAV with up to two seconds of contextual overlap.
+4. Transcribes with deterministic dither to avoid sherpa blank-output failures, retrying without dither only when needed.
+5. Assigns complete timestamped words to their owning chunks and fails the operation if any chunk fails.
+6. Combines the chunks and writes text, JSON, or WebVTT.
 
 ## Performance
 
@@ -205,7 +205,7 @@ Benchmark on a 1-minute audio file (AMD Ryzen 5 5600X, 6 cores). The chough row 
 
 | Tool                | Model                |     Time |  Relative | Realtime Factor |    Memory |
 | ------------------- | -------------------- | -------: | --------: | --------------: | --------: |
-| **chough**          | Parakeet TDT 0.6b V3 | **4.6s** | **12.2x** |       **13.0x** | **1.4GB** |
+| **chough**          | Parakeet TDT 0.6b V3 | **4.6s** | **12.4x** |       **13.1x** | **1.2GB** |
 | whisper-ctranslate2 | medium               |    27.8s |      2.0x |            2.2x |     1.7GB |
 | whisper             | turbo                |    56.6s |      1.0x |            1.1x |     5.3GB |
 
@@ -217,23 +217,34 @@ Current cold CLI results using one warmup and three measured runs:
 
 | Duration |  Time |              Speed | Peak RSS |
 | -------- | ----: | -----------------: | -------: |
-| 15s      |  2.3s |  **6.6x realtime** |   1101MB |
-| 1m       |  4.6s | **13.0x realtime** |   1448MB |
-| 5m       | 16.4s | **18.3x realtime** |   1894MB |
-| 30m      | 94.2s | **19.6x realtime** |   1931MB |
+| 15s      |  2.2s |  **6.8x realtime** |   1130MB |
+| 1m       |  4.6s | **13.1x realtime** |   1204MB |
+| 5m       | 17.1s | **17.6x realtime** |   1385MB |
 
 ### Current cold and warm measurements
 
 Measured on the same AMD Ryzen 5 5600X with four sherpa threads. Cold runs include process and model startup; warm runs use an already-ready HTTP server. Each result uses one warmup followed by three measured runs.
 
-| Mode        | Audio | Mean | Realtime | Peak RSS |
-| ----------- | ----- | ---: | -------: | -------: |
-| cold CLI    | 15s   | 2.3s |     6.6x |   1101MB |
-| cold CLI    | 1m    | 4.6s |    13.0x |   1448MB |
-| warm server | 15s   | 0.7s |    21.3x |   1223MB |
-| warm server | 1m    | 3.1s |    19.5x |   1877MB |
+| Mode        | Audio |    Mean | Realtime | Peak RSS |
+| ----------- | ----- | ------: | -------: | -------: |
+| cold CLI    | 15s   |  2.212s |     6.8x |   1130MB |
+| cold CLI    | 1m    |  4.569s |    13.1x |   1204MB |
+| cold CLI    | 5m    | 17.058s |    17.6x |   1385MB |
+| warm server | 15s   |  0.742s |    20.2x |   1249MB |
+| warm server | 1m    |  2.956s |    20.3x |   1439MB |
+| warm server | 5m    | 15.229s |    19.7x |   1515MB |
 
 Peak warm-server RSS is the server high-water mark after repeated requests. Results vary with CPU, model cache state, and background load.
+
+### Recognition checks
+
+WER uses the public Open ASR Leaderboard English normalizer. These are focused regression fixtures, not dataset-wide model scores.
+
+| Fixture                                | Reference words |    WER |
+| -------------------------------------- | --------------: | -----: |
+| five-minute LibriSpeech composite      |             716 |  4.61% |
+| 14.6-minute Earnings22-Cleaned-AA call |           1,719 | 11.87% |
+| combined                               |           2,435 |  9.73% |
 
 Run the maintained 15-second and 1-minute benchmark suite:
 
