@@ -1,39 +1,17 @@
 package server
 
 import (
-	"context"
-
 	"github.com/hyperpuncher/chough/internal/types"
+	"github.com/hyperpuncher/chough/internal/worker"
 )
 
-// Job represents a transcription job
-type Job struct {
-	Context   context.Context
-	FilePath  string
-	ChunkSize int
-	Cleanup   func()
-	Result    chan JobResult
-	Error     chan error
-}
-
-// JobResult holds the result of a transcription job
-type JobResult struct {
-	Duration       float64
-	ProcessingTime float64
-	RealtimeFactor float64
-	Text           string
-	Chunks         []types.ChunkResult
-}
-
-// TranscribeRequest represents a transcription request
 type TranscribeRequest struct {
 	URL       string `json:"url,omitempty"`
 	Base64    string `json:"base64,omitempty"`
-	Format    string `json:"format"`               // text, json, vtt
-	ChunkSize *int   `json:"chunk_size,omitempty"` // seconds
+	Format    string `json:"format"`
+	ChunkSize *int   `json:"chunk_size,omitempty"`
 }
 
-// TranscribeResponse represents a transcription response
 type TranscribeResponse struct {
 	Success        bool                `json:"success"`
 	Error          string              `json:"error,omitempty"`
@@ -44,7 +22,6 @@ type TranscribeResponse struct {
 	Chunks         []types.ChunkResult `json:"chunks,omitempty"`
 }
 
-// HealthResponse represents a health check response
 type HealthResponse struct {
 	Status      string `json:"status"`
 	ModelLoaded bool   `json:"model_loaded"`
@@ -55,7 +32,6 @@ type HealthResponse struct {
 	BusyWorkers int    `json:"busy_workers"`
 }
 
-// ServerOptions holds server configuration
 type ServerOptions struct {
 	Host             string
 	Port             int
@@ -65,9 +41,8 @@ type ServerOptions struct {
 	AllowPrivateURLs bool
 }
 
-// DefaultServerOptions returns default server options
-func DefaultServerOptions() *ServerOptions {
-	return &ServerOptions{
+func DefaultOptions() ServerOptions {
+	return ServerOptions{
 		Host:         "0.0.0.0",
 		Port:         8080,
 		MaxUploadMB:  1024,
@@ -76,11 +51,10 @@ func DefaultServerOptions() *ServerOptions {
 	}
 }
 
-// RecognizerPool is the interface for the worker pool
-type RecognizerPool interface {
-	Submit(job *Job) error
+// WorkerPool is the worker behavior needed by the HTTP server.
+type WorkerPool interface {
+	Submit(job *worker.Job) error
 	QueueSize() int
 	BusyWorkers() int
 	TotalWorkers() int
-	Shutdown()
 }

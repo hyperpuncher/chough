@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hyperpuncher/chough/internal/server"
 	"github.com/hyperpuncher/chough/internal/transcribe"
 )
 
@@ -31,18 +30,17 @@ func TestShutdownCancelsActiveAndQueuedJobs(t *testing.T) {
 	service := transcribe.NewService(&testRecognizer{}, processor)
 	pool := NewPool(1, 2, service)
 
-	jobs := make([]*server.Job, 2)
+	jobs := make([]*Job, 2)
 	cleaned := make([]chan struct{}, 2)
 	for i := range jobs {
 		cleaned[i] = make(chan struct{})
 		cleanup := cleaned[i]
-		jobs[i] = &server.Job{
+		jobs[i] = &Job{
 			Context:   context.Background(),
 			FilePath:  "audio.mp3",
 			ChunkSize: 60,
 			Cleanup:   func() { close(cleanup) },
-			Result:    make(chan server.JobResult, 1),
-			Error:     make(chan error, 1),
+			Response:  make(chan Response, 1),
 		}
 		if err := pool.Submit(jobs[i]); err != nil {
 			t.Fatalf("Submit(job %d) error = %v", i, err)
@@ -58,7 +56,10 @@ func TestShutdownCancelsActiveAndQueuedJobs(t *testing.T) {
 
 	for i, job := range jobs {
 		select {
-		case <-job.Error:
+		case response := <-job.Response:
+			if response.Error == nil {
+				t.Fatalf("job %d error = nil, want shutdown error", i)
+			}
 		case <-time.After(time.Second):
 			t.Fatalf("job %d did not receive shutdown error", i)
 		}

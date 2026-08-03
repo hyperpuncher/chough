@@ -3,8 +3,8 @@ package server
 import "testing"
 
 func TestValidateOptions(t *testing.T) {
-	valid := *DefaultServerOptions()
-	if err := ValidateOptions(&valid); err != nil {
+	valid := DefaultOptions()
+	if err := ValidateOptions(valid); err != nil {
 		t.Fatalf("ValidateOptions() error = %v", err)
 	}
 
@@ -24,7 +24,7 @@ func TestValidateOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			options := valid
 			tt.mutate(&options)
-			if err := ValidateOptions(&options); err == nil {
+			if err := ValidateOptions(options); err == nil {
 				t.Fatal("ValidateOptions() error = nil, want validation error")
 			}
 		})
@@ -32,7 +32,7 @@ func TestValidateOptions(t *testing.T) {
 }
 
 func TestRequestBodyLimits(t *testing.T) {
-	options := &ServerOptions{MaxUploadMB: 1}
+	options := ServerOptions{MaxUploadMB: 1}
 	if got, want := options.maxRequestBodyBytes("multipart/form-data"), int64(2*megabyte); got != want {
 		t.Fatalf("multipart body limit = %d, want %d", got, want)
 	}

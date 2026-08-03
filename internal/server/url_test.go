@@ -78,7 +78,7 @@ func TestDownloadEnforcesResponseLimit(t *testing.T) {
 
 			policy := newURLPolicy(true, nil)
 			server := &Server{
-				options:        &ServerOptions{MaxUploadMB: 1},
+				options:        ServerOptions{MaxUploadMB: 1},
 				urlPolicy:      policy,
 				downloadClient: newDownloadClient(policy),
 			}

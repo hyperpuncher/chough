@@ -9,8 +9,8 @@ type Config struct {
 	Provider   string
 }
 
-func DefaultConfig(modelPath string) *Config {
-	return &Config{
+func DefaultConfig(modelPath string) Config {
+	return Config{
 		ModelPath:  modelPath,
 		NumThreads: 4,
 		SampleRate: 16000,

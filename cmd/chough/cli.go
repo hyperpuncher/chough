@@ -8,6 +8,9 @@ import (
 	"os"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/hyperpuncher/chough/internal/server"
+	"github.com/hyperpuncher/chough/internal/transcribe"
 )
 
 var (
@@ -27,7 +30,6 @@ var (
 )
 
 type cliOptions struct {
-	// CLI mode
 	AudioFile   string
 	ChunkSize   int
 	Format      string
@@ -35,14 +37,8 @@ type cliOptions struct {
 	ShowVersion bool
 	RemoteMode  bool
 
-	// Server mode
-	ServerMode       bool
-	ServerHost       string
-	ServerPort       int
-	Workers          int
-	QueueSize        int
-	MaxUploadMB      int
-	AllowPrivateURLs bool
+	ServerMode    bool
+	ServerOptions server.ServerOptions
 }
 
 type cliFlag struct {
@@ -60,20 +56,22 @@ type usageRow struct {
 }
 
 var usageFlags = []cliFlag{
-	{short: "c", long: "chunk-size", arg: "int", description: "chunk size in seconds", defaultVal: "60"},
+	{short: "c", long: "chunk-size", arg: "int", description: "chunk size in seconds", defaultVal: fmt.Sprint(transcribe.DefaultChunkSize)},
 	{short: "f", long: "format", arg: "string", description: "output format: text, json, vtt", defaultVal: "text"},
 	{short: "o", long: "output", arg: "file", description: "output file", defaultVal: "stdout"},
 	{short: "r", long: "remote", description: "transcribe via remote server using CHOUGH_URL"},
 	{long: "version", description: "show version"},
 }
 
+var defaultServerOptions = server.DefaultOptions()
+
 var serverFlags = []cliFlag{
 	{long: "server", description: "run in server mode"},
-	{long: "host", arg: "string", description: "server host", defaultVal: "0.0.0.0"},
-	{long: "port", arg: "int", description: "server port", defaultVal: "8080"},
-	{long: "workers", arg: "int", description: "concurrent preparation workers", defaultVal: "2"},
-	{long: "queue-size", arg: "int", description: "maximum queued requests", defaultVal: "10"},
-	{long: "max-upload", arg: "int", description: "max upload size in MB", defaultVal: "1024"},
+	{long: "host", arg: "string", description: "server host", defaultVal: defaultServerOptions.Host},
+	{long: "port", arg: "int", description: "server port", defaultVal: fmt.Sprint(defaultServerOptions.Port)},
+	{long: "workers", arg: "int", description: "concurrent preparation workers", defaultVal: fmt.Sprint(defaultServerOptions.Workers)},
+	{long: "queue-size", arg: "int", description: "maximum queued requests", defaultVal: fmt.Sprint(defaultServerOptions.MaxQueueSize)},
+	{long: "max-upload", arg: "int", description: "max upload size in MB", defaultVal: fmt.Sprint(defaultServerOptions.MaxUploadMB)},
 	{long: "allow-private-urls", description: "allow URL downloads from private networks"},
 }
 
@@ -105,10 +103,10 @@ func disableColors() {
 func parseCLI(args []string) (cliOptions, error) {
 	fs := flag.NewFlagSet("chough", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	defaults := defaultServerOptions
 
-	// CLI flags
-	chunkSize := fs.Int("c", 60, "chunk size in seconds")
-	fs.IntVar(chunkSize, "chunk-size", 60, "chunk size in seconds")
+	chunkSize := fs.Int("c", transcribe.DefaultChunkSize, "chunk size in seconds")
+	fs.IntVar(chunkSize, "chunk-size", transcribe.DefaultChunkSize, "chunk size in seconds")
 	format := fs.String("f", "text", "output format (text, json, vtt)")
 	fs.StringVar(format, "format", "text", "output format (text, json, vtt)")
 	outputFile := fs.String("o", "", "output file")
@@ -117,13 +115,12 @@ func parseCLI(args []string) (cliOptions, error) {
 	remoteMode := fs.Bool("r", false, "transcribe via remote server using CHOUGH_URL")
 	fs.BoolVar(remoteMode, "remote", false, "transcribe via remote server using CHOUGH_URL")
 
-	// Server flags
 	serverMode := fs.Bool("server", false, "run in server mode")
-	serverHost := fs.String("host", "0.0.0.0", "server host")
-	serverPort := fs.Int("port", 8080, "server port")
-	workers := fs.Int("workers", 2, "concurrent preparation workers")
-	queueSize := fs.Int("queue-size", 10, "maximum queued requests")
-	maxUploadMB := fs.Int("max-upload", 1024, "max upload size in MB")
+	serverHost := fs.String("host", defaults.Host, "server host")
+	serverPort := fs.Int("port", defaults.Port, "server port")
+	workers := fs.Int("workers", defaults.Workers, "concurrent preparation workers")
+	queueSize := fs.Int("queue-size", defaults.MaxQueueSize, "maximum queued requests")
+	maxUploadMB := fs.Int64("max-upload", defaults.MaxUploadMB, "max upload size in MB")
 	allowPrivateURLs := fs.Bool("allow-private-urls", false, "allow URL downloads from private networks")
 
 	fs.Usage = func() {
@@ -138,35 +135,66 @@ func parseCLI(args []string) (cliOptions, error) {
 	}
 
 	opts := cliOptions{
-		ChunkSize:        *chunkSize,
-		Format:           strings.ToLower(*format),
-		OutputFile:       *outputFile,
-		ShowVersion:      *showVersion,
-		RemoteMode:       *remoteMode,
-		ServerMode:       *serverMode,
-		ServerHost:       *serverHost,
-		ServerPort:       *serverPort,
-		Workers:          *workers,
-		QueueSize:        *queueSize,
-		MaxUploadMB:      *maxUploadMB,
-		AllowPrivateURLs: *allowPrivateURLs,
+		ChunkSize:   *chunkSize,
+		Format:      strings.ToLower(*format),
+		OutputFile:  *outputFile,
+		ShowVersion: *showVersion,
+		RemoteMode:  *remoteMode,
+		ServerMode:  *serverMode,
+		ServerOptions: server.ServerOptions{
+			Host:             *serverHost,
+			Port:             *serverPort,
+			Workers:          *workers,
+			MaxQueueSize:     *queueSize,
+			MaxUploadMB:      *maxUploadMB,
+			AllowPrivateURLs: *allowPrivateURLs,
+		},
 	}
 
-	if opts.ShowVersion || opts.ServerMode {
+	setFlags := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
+	flagSet := func(names ...string) bool {
+		for _, name := range names {
+			if setFlags[name] {
+				return true
+			}
+		}
+		return false
+	}
+
+	if opts.ShowVersion {
 		return opts, nil
+	}
+	if opts.ServerMode {
+		if fs.NArg() != 0 {
+			return cliOptions{}, fmt.Errorf("%w: server mode does not accept an audio file", errInvalidArgs)
+		}
+		if opts.RemoteMode || flagSet("c", "chunk-size", "f", "format", "o", "output") {
+			return cliOptions{}, fmt.Errorf("%w: transcription flags cannot be used with --server", errInvalidArgs)
+		}
+		return opts, nil
+	}
+	if flagSet("host", "port", "workers", "queue-size", "max-upload", "allow-private-urls") {
+		return cliOptions{}, fmt.Errorf("%w: server flags require --server", errInvalidArgs)
 	}
 	if opts.ChunkSize <= 0 {
 		return cliOptions{}, fmt.Errorf("%w: chunk size must be positive", errInvalidArgs)
 	}
 
 	if fs.NArg() < 1 {
-		// Check if stdin has data for pipe mode
 		stat, err := os.Stdin.Stat()
 		if err != nil || (stat.Mode()&os.ModeCharDevice) != 0 {
 			return cliOptions{}, fmt.Errorf("%w: audio file is required (or pipe audio to stdin)", errInvalidArgs)
 		}
 		opts.AudioFile = "-"
 	} else {
+		if fs.NArg() > 1 {
+			extra := fs.Arg(1)
+			if strings.HasPrefix(extra, "-") {
+				return cliOptions{}, fmt.Errorf("%w: unexpected flag %q; flags must appear before the audio file", errInvalidArgs, extra)
+			}
+			return cliOptions{}, fmt.Errorf("%w: unexpected argument %q; only one audio file is accepted", errInvalidArgs, extra)
+		}
 		opts.AudioFile = fs.Arg(0)
 	}
 

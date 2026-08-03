@@ -11,41 +11,28 @@ import (
 	"github.com/hyperpuncher/chough/internal/worker"
 )
 
-func runServer(ctx context.Context, opts *cliOptions) error {
-	serverOpts := &server.ServerOptions{
-		Host:             opts.ServerHost,
-		Port:             opts.ServerPort,
-		MaxUploadMB:      int64(opts.MaxUploadMB),
-		Workers:          opts.Workers,
-		MaxQueueSize:     opts.QueueSize,
-		AllowPrivateURLs: opts.AllowPrivateURLs,
-	}
-	if err := server.ValidateOptions(serverOpts); err != nil {
+func runServer(ctx context.Context, opts cliOptions) error {
+	if err := server.ValidateOptions(opts.ServerOptions); err != nil {
 		return fmt.Errorf("invalid server configuration: %w", err)
 	}
 
-	// Load model
 	recognizer, err := loadRecognizer(ctx)
 	if err != nil {
 		return err
 	}
 	defer recognizer.Close()
 
-	// Create worker pool
 	service := transcribe.NewService(recognizer)
-	pool := worker.NewPool(opts.Workers, opts.QueueSize, service)
+	pool := worker.NewPool(opts.ServerOptions.Workers, opts.ServerOptions.MaxQueueSize, service)
 	defer pool.Shutdown()
 
-	// Create HTTP server
-	srv := server.NewServer(serverOpts, pool, version)
+	srv := server.NewServer(opts.ServerOptions, pool, version)
 
-	// Start server
-	fmt.Fprintf(os.Stderr, "🚀 Server running on http://%s:%d\n", opts.ServerHost, opts.ServerPort)
+	fmt.Fprintf(os.Stderr, "🚀 Server running on http://%s:%d\n", opts.ServerOptions.Host, opts.ServerOptions.Port)
 	fmt.Fprintf(os.Stderr, "   POST /transcribe - Transcribe audio\n")
 	fmt.Fprintf(os.Stderr, "   GET  /health     - Health check\n")
 	fmt.Fprintf(os.Stderr, "\nPress Ctrl+C to stop\n")
 
-	// Handle shutdown
 	errChan := make(chan error, 1)
 	go func() {
 		errChan <- srv.Start()

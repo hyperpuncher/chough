@@ -13,14 +13,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hyperpuncher/chough/internal/transcribe"
 	"github.com/hyperpuncher/chough/internal/types"
+	"github.com/hyperpuncher/chough/internal/worker"
 )
 
 type capturePool struct {
-	jobs chan *Job
+	jobs chan *worker.Job
 }
 
-func (p *capturePool) Submit(job *Job) error {
+func (p *capturePool) Submit(job *worker.Job) error {
 	p.jobs <- job
 	return nil
 }
@@ -28,11 +30,10 @@ func (p *capturePool) Submit(job *Job) error {
 func (*capturePool) QueueSize() int    { return 0 }
 func (*capturePool) BusyWorkers() int  { return 0 }
 func (*capturePool) TotalWorkers() int { return 1 }
-func (*capturePool) Shutdown()         {}
 
 func TestHandleTranscribePropagatesRequestCancellation(t *testing.T) {
-	pool := &capturePool{jobs: make(chan *Job, 1)}
-	server := NewServer(&ServerOptions{MaxUploadMB: 1, Workers: 1, MaxQueueSize: 1}, pool, "test")
+	pool := &capturePool{jobs: make(chan *worker.Job, 1)}
+	server := NewServer(ServerOptions{MaxUploadMB: 1, Workers: 1, MaxQueueSize: 1}, pool, "test")
 	ctx, cancel := context.WithCancel(context.Background())
 	request := httptest.NewRequest("POST", "/transcribe", bytes.NewBufferString(`{"base64":"YQ=="}`)).WithContext(ctx)
 	request.Header.Set("Content-Type", "application/json")
@@ -61,8 +62,8 @@ func TestHandleTranscribePropagatesRequestCancellation(t *testing.T) {
 }
 
 func TestHandleTranscribeRejectsAtCapacityBeforeReadingBody(t *testing.T) {
-	pool := &capturePool{jobs: make(chan *Job, 1)}
-	server := NewServer(&ServerOptions{MaxUploadMB: 1, Workers: 1, MaxQueueSize: 1}, pool, "test")
+	pool := &capturePool{jobs: make(chan *worker.Job, 1)}
+	server := NewServer(ServerOptions{MaxUploadMB: 1, Workers: 1, MaxQueueSize: 1}, pool, "test")
 	server.admission <- struct{}{}
 	server.admission <- struct{}{}
 
@@ -78,7 +79,7 @@ func TestHandleTranscribeRejectsAtCapacityBeforeReadingBody(t *testing.T) {
 }
 
 func TestParseRequestEnforcesMultipartFileLimit(t *testing.T) {
-	server := &Server{options: &ServerOptions{MaxUploadMB: 1}}
+	server := &Server{options: ServerOptions{MaxUploadMB: 1}}
 	for _, tt := range []struct {
 		name    string
 		size    int
@@ -120,7 +121,7 @@ func TestParseRequestEnforcesMultipartFileLimit(t *testing.T) {
 }
 
 func TestParseRequestRejectsOversizedBase64(t *testing.T) {
-	server := &Server{options: &ServerOptions{MaxUploadMB: 1}}
+	server := &Server{options: ServerOptions{MaxUploadMB: 1}}
 	encoded := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{'a'}, int(megabyte)+1))
 	body := `{"base64":"` + encoded + `"}`
 	request := httptest.NewRequest(http.MethodPost, "/transcribe", strings.NewReader(body))
@@ -131,7 +132,7 @@ func TestParseRequestRejectsOversizedBase64(t *testing.T) {
 }
 
 func TestParseRequestValidatesJSONChunkSize(t *testing.T) {
-	server := &Server{options: &ServerOptions{MaxUploadMB: 1}}
+	server := &Server{options: ServerOptions{MaxUploadMB: 1}}
 
 	for _, body := range []string{
 		`{"base64":"YQ==","chunk_size":0}`,
@@ -146,7 +147,7 @@ func TestParseRequestValidatesJSONChunkSize(t *testing.T) {
 }
 
 func TestParseRequestUsesDefaultAndExplicitJSONChunkSize(t *testing.T) {
-	server := &Server{options: &ServerOptions{MaxUploadMB: 1}}
+	server := &Server{options: ServerOptions{MaxUploadMB: 1}}
 
 	for _, tt := range []struct {
 		name string
@@ -172,8 +173,8 @@ func TestParseRequestUsesDefaultAndExplicitJSONChunkSize(t *testing.T) {
 }
 
 func TestHandleTranscribeRejectsOversizedRequestBody(t *testing.T) {
-	pool := &capturePool{jobs: make(chan *Job, 1)}
-	options := &ServerOptions{MaxUploadMB: 1, Workers: 1, MaxQueueSize: 1}
+	pool := &capturePool{jobs: make(chan *worker.Job, 1)}
+	options := ServerOptions{MaxUploadMB: 1, Workers: 1, MaxQueueSize: 1}
 	server := NewServer(options, pool, "test")
 	body := `{"base64":"` + strings.Repeat("A", int(options.maxRequestBodyBytes("application/json")))
 	request := httptest.NewRequest(http.MethodPost, "/transcribe", strings.NewReader(body))
@@ -189,7 +190,7 @@ func TestHandleTranscribeRejectsOversizedRequestBody(t *testing.T) {
 func TestJSONResponseIncludesOptionalTokenData(t *testing.T) {
 	server := &Server{}
 	response := httptest.NewRecorder()
-	if err := server.sendFormattedResponse(response, "json", JobResult{
+	if err := server.sendFormattedResponse(response, "json", transcribe.Result{
 		Text: "hello",
 		Chunks: []types.ChunkResult{{
 			Text:      "hello",
@@ -211,8 +212,8 @@ func TestJSONResponseIncludesOptionalTokenData(t *testing.T) {
 }
 
 func TestHTTPMethodAndHealthResponses(t *testing.T) {
-	pool := &capturePool{jobs: make(chan *Job, 1)}
-	server := NewServer(&ServerOptions{MaxUploadMB: 1, Workers: 1, MaxQueueSize: 1}, pool, "test")
+	pool := &capturePool{jobs: make(chan *worker.Job, 1)}
+	server := NewServer(ServerOptions{MaxUploadMB: 1, Workers: 1, MaxQueueSize: 1}, pool, "test")
 
 	methodResponse := httptest.NewRecorder()
 	server.handleTranscribe(methodResponse, httptest.NewRequest(http.MethodGet, "/transcribe", nil))

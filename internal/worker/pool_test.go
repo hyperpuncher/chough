@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/hyperpuncher/chough/internal/asr"
-	"github.com/hyperpuncher/chough/internal/server"
 	"github.com/hyperpuncher/chough/internal/transcribe"
 )
 
@@ -36,24 +35,28 @@ func TestPoolUsesSharedTranscriptionService(t *testing.T) {
 	service := transcribe.NewService(&testRecognizer{}, testAudioProcessor{duration: 120})
 	pool := NewPool(1, 1, service)
 	defer pool.Shutdown()
+	if err := pool.Submit(&Job{}); err == nil {
+		t.Fatal("Submit() error = nil for unbuffered response channel")
+	}
 
 	cleaned := make(chan struct{})
-	job := &server.Job{
+	job := &Job{
 		Context:   context.Background(),
 		FilePath:  "audio.mp3",
 		ChunkSize: 60,
 		Cleanup:   func() { close(cleaned) },
-		Result:    make(chan server.JobResult, 1),
-		Error:     make(chan error, 1),
+		Response:  make(chan Response, 1),
 	}
 	if err := pool.Submit(job); err != nil {
 		t.Fatalf("Submit() error = %v", err)
 	}
 
 	select {
-	case err := <-job.Error:
-		t.Fatalf("worker error = %v", err)
-	case result := <-job.Result:
+	case response := <-job.Response:
+		if response.Error != nil {
+			t.Fatalf("worker error = %v", response.Error)
+		}
+		result := response.Transcription
 		if result.Duration != 120 || result.Text != "chunk 1 chunk 2" || len(result.Chunks) != 2 {
 			t.Fatalf("unexpected worker result: %+v", result)
 		}

@@ -6,14 +6,13 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/hyperpuncher/chough/internal/server"
 	"github.com/hyperpuncher/chough/internal/transcribe"
 )
 
-// Pool manages a pool of transcription workers
+// Pool manages queued transcription work.
 type Pool struct {
 	workers   int
-	queue     chan *server.Job
+	queue     chan *Job
 	service   *transcribe.Service
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -23,30 +22,28 @@ type Pool struct {
 	busyCount atomic.Int32
 }
 
-// NewPool creates a new worker pool
-func NewPool(workers int, queueSize int, service *transcribe.Service) *Pool {
+func NewPool(workers, queueSize int, service *transcribe.Service) *Pool {
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &Pool{
+	pool := &Pool{
 		workers: workers,
-		queue:   make(chan *server.Job, queueSize),
+		queue:   make(chan *Job, queueSize),
 		service: service,
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-
-	// Start workers
 	for range workers {
-		p.wg.Add(1)
-		go p.worker()
+		pool.wg.Add(1)
+		go pool.worker()
 	}
-
-	return p
+	return pool
 }
 
-// Submit adds a job to the queue
-func (p *Pool) Submit(job *server.Job) error {
+func (p *Pool) Submit(job *Job) error {
 	if job == nil {
 		return fmt.Errorf("job is required")
+	}
+	if cap(job.Response) < 1 {
+		return fmt.Errorf("buffered job response channel is required")
 	}
 	if job.Context != nil {
 		if err := job.Context.Err(); err != nil {
@@ -67,22 +64,18 @@ func (p *Pool) Submit(job *server.Job) error {
 	}
 }
 
-// QueueSize returns the current queue size
 func (p *Pool) QueueSize() int {
 	return len(p.queue)
 }
 
-// BusyWorkers returns the number of busy workers
 func (p *Pool) BusyWorkers() int {
 	return int(p.busyCount.Load())
 }
 
-// TotalWorkers returns the total number of workers
 func (p *Pool) TotalWorkers() int {
 	return p.workers
 }
 
-// Shutdown stops all workers
 func (p *Pool) Shutdown() {
 	p.mu.Lock()
 	if !p.closed {
@@ -99,12 +92,12 @@ func (p *Pool) worker() {
 
 	for job := range p.queue {
 		if err := p.ctx.Err(); err != nil {
-			p.finishJob(job, server.JobResult{}, err)
+			p.finishJob(job, transcribe.Result{}, err)
 			continue
 		}
 		if job.Context != nil {
 			if err := job.Context.Err(); err != nil {
-				p.finishJob(job, server.JobResult{}, err)
+				p.finishJob(job, transcribe.Result{}, err)
 				continue
 			}
 		}
@@ -112,7 +105,7 @@ func (p *Pool) worker() {
 	}
 }
 
-func (p *Pool) processJob(job *server.Job) {
+func (p *Pool) processJob(job *Job) {
 	p.busyCount.Add(1)
 	defer p.busyCount.Add(-1)
 
@@ -127,31 +120,16 @@ func (p *Pool) processJob(job *server.Job) {
 
 	result, err := p.service.Transcribe(ctx, job.FilePath, transcribe.Options{ChunkSize: job.ChunkSize})
 	if err != nil {
-		p.finishJob(job, server.JobResult{}, fmt.Errorf("transcription failed: %w", err))
+		p.finishJob(job, transcribe.Result{}, fmt.Errorf("transcription failed: %w", err))
 		return
 	}
-
-	rtFactor := 0.0
-	if result.ProcessingTime > 0 && result.Duration > 0 {
-		rtFactor = result.Duration / result.ProcessingTime.Seconds()
-	}
-	p.finishJob(job, server.JobResult{
-		Duration:       result.Duration,
-		ProcessingTime: result.ProcessingTime.Seconds(),
-		RealtimeFactor: rtFactor,
-		Text:           result.Text,
-		Chunks:         result.Chunks,
-	}, nil)
+	p.finishJob(job, result, nil)
 }
 
-func (p *Pool) finishJob(job *server.Job, result server.JobResult, err error) {
+func (p *Pool) finishJob(job *Job, result transcribe.Result, err error) {
 	if job.Cleanup != nil {
 		job.Cleanup()
 		job.Cleanup = nil
 	}
-	if err != nil {
-		job.Error <- err
-		return
-	}
-	job.Result <- result
+	job.Response <- Response{Transcription: result, Error: err}
 }

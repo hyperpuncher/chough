@@ -9,14 +9,12 @@ import (
 	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
 )
 
-// Recognizer wraps Sherpa-ONNX recognizer with proper cleanup
+// Recognizer owns the native sherpa recognizer.
 type Recognizer struct {
-	Config     *Config
 	recognizer *sherpa.OfflineRecognizer
 }
 
-// NewRecognizer creates a new ASR recognizer
-func NewRecognizer(cfg *Config) (*Recognizer, error) {
+func NewRecognizer(cfg Config) (*Recognizer, error) {
 	sherpaConfig := sherpa.OfflineRecognizerConfig{
 		FeatConfig: sherpa.FeatureConfig{
 			SampleRate: cfg.SampleRate,
@@ -40,33 +38,26 @@ func NewRecognizer(cfg *Config) (*Recognizer, error) {
 		return nil, fmt.Errorf("failed to create recognizer")
 	}
 
-	return &Recognizer{
-		Config:     cfg,
-		recognizer: recognizer,
-	}, nil
+	return &Recognizer{recognizer: recognizer}, nil
 }
 
-// Transcribe transcribes an audio file
 func (r *Recognizer) Transcribe(audioPath string) (*Result, error) {
 	if r == nil || r.recognizer == nil {
 		return nil, fmt.Errorf("recognizer not initialized")
 	}
 
-	// Read wave file using pure Go implementation (no C memory leaks!)
 	wave, err := audio.ReadWave(audioPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read wave file: %w", err)
 	}
 
-	// Create stream with EXPLICIT cleanup via defer
 	stream := sherpa.NewOfflineStream(r.recognizer)
-	defer sherpa.DeleteOfflineStream(stream) // ← KEY: prevents memory leak!
+	// Sherpa streams own native memory and must be deleted explicitly.
+	defer sherpa.DeleteOfflineStream(stream)
 
-	// Process audio
 	stream.AcceptWaveform(wave.SampleRate, wave.Samples)
 	r.recognizer.Decode(stream)
 
-	// Get result
 	sherpaResult := stream.GetResult()
 	if sherpaResult == nil {
 		return &Result{Text: ""}, nil
@@ -81,7 +72,6 @@ func (r *Recognizer) Transcribe(audioPath string) (*Result, error) {
 	}, nil
 }
 
-// Close cleans up the recognizer
 func (r *Recognizer) Close() {
 	if r.recognizer != nil {
 		sherpa.DeleteOfflineRecognizer(r.recognizer)
@@ -89,7 +79,6 @@ func (r *Recognizer) Close() {
 	}
 }
 
-// Result holds transcription result
 type Result struct {
 	Text       string
 	Timestamps []float32

@@ -34,12 +34,10 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	// Server mode
 	if opts.ServerMode {
-		return runServer(ctx, &opts)
+		return runServer(ctx, opts)
 	}
 
-	// Handle stdin input by copying to temp file
 	audioFile := opts.AudioFile
 	var tempFile string
 	if opts.AudioFile == "-" {
@@ -102,12 +100,12 @@ func run(ctx context.Context, args []string) error {
 			yellow, reset, bold, elapsed.Seconds(), reset, dim, rtColor, rtFactor, reset, reset)
 	}
 
-	out, closeFn, err := openOutput(opts.OutputFile)
+	out, closer, err := openOutput(opts.OutputFile)
 	if err != nil {
 		return err
 	}
 
-	return writeAndCloseOutput(out, closeFn, opts.Format, results, duration)
+	return writeAndCloseOutput(out, closer, opts.Format, results, duration)
 }
 
 func loadRecognizer(ctx context.Context) (*asr.Recognizer, error) {
@@ -187,33 +185,35 @@ func transcribeLocal(ctx context.Context, service *transcribe.Service, audioFile
 	return result, nil
 }
 
-func writeAndCloseOutput(out io.Writer, closeFn func() error, format string, results []types.ChunkResult, duration float64) error {
+func writeAndCloseOutput(out io.Writer, closer io.Closer, format string, results []types.ChunkResult, duration float64) error {
 	writeErr := output.Write(out, format, results, duration)
-	closeErr := closeFn()
+	var closeErr error
+	if closer != nil {
+		closeErr = closer.Close()
+	}
 	if writeErr != nil {
-		writeErr = fmt.Errorf("error writing output: %w", writeErr)
+		writeErr = fmt.Errorf("write output: %w", writeErr)
 	}
 	if closeErr != nil {
-		closeErr = fmt.Errorf("error closing output: %w", closeErr)
+		closeErr = fmt.Errorf("close output: %w", closeErr)
 	}
 	return errors.Join(writeErr, closeErr)
 }
 
-func openOutput(path string) (io.Writer, func() error, error) {
+func openOutput(path string) (io.Writer, io.Closer, error) {
 	if path == "" {
-		return os.Stdout, func() error { return nil }, nil
+		return os.Stdout, nil, nil
 	}
 
 	file, err := os.Create(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error creating output file: %w", err)
+		return nil, nil, fmt.Errorf("create output file %q: %w", path, err)
 	}
-	fmt.Fprintf(os.Stderr, "Output: %s\n", path)
-	return file, file.Close, nil
+	fmt.Fprintf(os.Stderr, "output: %s\n", path)
+	return file, file, nil
 }
 
-// copyStdinToTemp reads all data from stdin and writes it to a temporary file.
-// Returns the path to the temp file which the caller must clean up.
+// copyStdinToTemp returns a temporary copy of stdin owned by the caller.
 func copyStdinToTemp() (string, error) {
 	tmpFile, err := os.CreateTemp("", "chough-stdin-*")
 	if err != nil {

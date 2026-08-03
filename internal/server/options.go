@@ -13,10 +13,7 @@ const (
 )
 
 // ValidateOptions validates server settings before model loading or binding.
-func ValidateOptions(options *ServerOptions) error {
-	if options == nil {
-		return fmt.Errorf("server options are required")
-	}
+func ValidateOptions(options ServerOptions) error {
 	if options.Host != "localhost" {
 		if _, err := netip.ParseAddr(options.Host); err != nil {
 			return fmt.Errorf("invalid host %q: use an IP address or localhost", options.Host)
@@ -44,11 +41,11 @@ func ValidateOptions(options *ServerOptions) error {
 	return nil
 }
 
-func (o *ServerOptions) maxUploadBytes() int64 {
+func (o ServerOptions) maxUploadBytes() int64 {
 	return o.MaxUploadMB * megabyte
 }
 
-func (o *ServerOptions) maxRequestBodyBytes(contentType string) int64 {
+func (o ServerOptions) maxRequestBodyBytes(contentType string) int64 {
 	maxUpload := o.maxUploadBytes()
 	if strings.HasPrefix(contentType, "application/json") {
 		return ((maxUpload + 2) / 3 * 4) + requestBodyOverhead

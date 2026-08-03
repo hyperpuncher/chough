@@ -13,6 +13,9 @@ import (
 	"github.com/hyperpuncher/chough/internal/types"
 )
 
+// DefaultChunkSize is the CLI and HTTP API chunk duration in seconds.
+const DefaultChunkSize = 60
+
 // Recognizer transcribes normalized WAV audio. Native recognition cannot be
 // interrupted once a call has started.
 type Recognizer interface {

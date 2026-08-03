@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/hyperpuncher/chough/internal/output"
+	"github.com/hyperpuncher/chough/internal/transcribe"
+	"github.com/hyperpuncher/chough/internal/worker"
 )
 
 var errUploadTooLarge = errors.New("upload exceeds configured limit")
@@ -22,8 +24,8 @@ var errUploadTooLarge = errors.New("upload exceeds configured limit")
 // Server is the HTTP server
 type Server struct {
 	httpServer     *http.Server
-	pool           RecognizerPool
-	options        *ServerOptions
+	pool           WorkerPool
+	options        ServerOptions
 	version        string
 	startTime      time.Time
 	urlPolicy      *urlPolicy
@@ -32,7 +34,7 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP server
-func NewServer(options *ServerOptions, pool RecognizerPool, version string) *Server {
+func NewServer(options ServerOptions, pool WorkerPool, version string) *Server {
 	policy := newURLPolicy(options.AllowPrivateURLs, nil)
 	s := &Server{
 		pool:           pool,
@@ -126,7 +128,6 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, s.options.maxRequestBodyBytes(r.Header.Get("Content-Type")))
 
-	// Parse request
 	filePath, format, chunkSize, cleanup, err := s.parseRequest(r)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -138,44 +139,46 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create job
 	jobCtx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
-	job := &Job{
+	job := &worker.Job{
 		Context:   jobCtx,
 		FilePath:  filePath,
 		ChunkSize: chunkSize,
 		Cleanup:   cleanup,
-		Result:    make(chan JobResult, 1),
-		Error:     make(chan error, 1),
+		Response:  make(chan worker.Response, 1),
 	}
 
-	// Submit to pool
 	if err := s.pool.Submit(job); err != nil {
 		cleanup()
 		s.sendError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 
-	// Wait for result
 	select {
-	case result := <-job.Result:
-		if err := s.sendFormattedResponse(w, format, result); err != nil {
-			fmt.Fprintf(os.Stderr, "write transcription response: %v\n", err)
-		}
-	case err := <-job.Error:
-		switch {
-		case errors.Is(err, context.Canceled):
+	case response := <-job.Response:
+		if response.Error != nil {
+			s.sendJobError(w, response.Error)
 			return
-		case errors.Is(err, context.DeadlineExceeded):
-			s.sendError(w, http.StatusRequestTimeout, "transcription timeout")
-		default:
-			s.sendError(w, http.StatusInternalServerError, err.Error())
+		}
+		if err := s.sendFormattedResponse(w, format, response.Transcription); err != nil {
+			fmt.Fprintf(os.Stderr, "write transcription response: %v\n", err)
 		}
 	case <-jobCtx.Done():
 		if jobCtx.Err() == context.DeadlineExceeded {
 			s.sendError(w, http.StatusRequestTimeout, "transcription timeout")
 		}
+	}
+}
+
+func (s *Server) sendJobError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return
+	case errors.Is(err, context.DeadlineExceeded):
+		s.sendError(w, http.StatusRequestTimeout, "transcription timeout")
+	default:
+		s.sendError(w, http.StatusInternalServerError, err.Error())
 	}
 }
 
@@ -199,7 +202,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSize int, cleanup func(), err error) {
 	format = "text"
-	chunkSize = 60
+	chunkSize = transcribe.DefaultChunkSize
 	defer func() {
 		if err != nil && cleanup != nil {
 			cleanup()
@@ -210,7 +213,7 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 	contentType := r.Header.Get("Content-Type")
 
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		// Handle file upload. Keep at most 32 MB of multipart data in memory.
+		// ParseMultipartForm spills upload data beyond 32 MB to disk.
 		multipartMemory := min(s.options.maxUploadBytes(), 32*megabyte)
 		if err := r.ParseMultipartForm(multipartMemory); err != nil {
 			return "", "", 0, nil, fmt.Errorf("failed to parse multipart form: %w", err)
@@ -232,7 +235,6 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		}
 		cleanup = func() { os.Remove(filePath) }
 
-		// Parse additional form fields
 		if f := r.FormValue("format"); f != "" {
 			format = strings.ToLower(f)
 		}
@@ -245,7 +247,6 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		}
 
 	} else if strings.HasPrefix(contentType, "application/json") {
-		// Handle JSON request (URL or base64)
 		var req TranscribeRequest
 		decoder := json.NewDecoder(r.Body)
 		if err := decoder.Decode(&req); err != nil {
@@ -256,7 +257,6 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		}
 
 		if req.URL != "" {
-			// Download from URL
 			filePath, err = s.downloadFromURL(r.Context(), req.URL)
 			if err != nil {
 				return "", "", 0, nil, err
@@ -296,7 +296,6 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		return "", "", 0, nil, fmt.Errorf("unsupported content type: %s", contentType)
 	}
 
-	// Validate format
 	if format != "text" && format != "json" && format != "vtt" {
 		return "", "", 0, nil, fmt.Errorf("invalid format: %s (must be text, json, or vtt)", format)
 	}
@@ -380,7 +379,12 @@ func (s *Server) sendError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
-func (s *Server) sendFormattedResponse(w http.ResponseWriter, format string, result JobResult) error {
+func (s *Server) sendFormattedResponse(w http.ResponseWriter, format string, result transcribe.Result) error {
+	realtimeFactor := 0.0
+	if result.ProcessingTime > 0 && result.Duration > 0 {
+		realtimeFactor = result.Duration / result.ProcessingTime.Seconds()
+	}
+
 	switch format {
 	case "text":
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -395,8 +399,8 @@ func (s *Server) sendFormattedResponse(w http.ResponseWriter, format string, res
 		return writeJSON(w, http.StatusOK, TranscribeResponse{
 			Success:        true,
 			Duration:       result.Duration,
-			ProcessingTime: result.ProcessingTime,
-			RealtimeFactor: result.RealtimeFactor,
+			ProcessingTime: result.ProcessingTime.Seconds(),
+			RealtimeFactor: realtimeFactor,
 			Text:           result.Text,
 			Chunks:         result.Chunks,
 		})
