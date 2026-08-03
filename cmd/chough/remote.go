@@ -1,8 +1,9 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -43,58 +44,45 @@ func resolveRemoteURL() (string, error) {
 	return strings.TrimRight(raw, "/"), nil
 }
 
-func transcribeRemote(serverURL, audioFile string, chunkSize int) ([]types.ChunkResult, float64, error) {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	fileWriter, err := writer.CreateFormFile("file", filepath.Base(audioFile))
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to create multipart file field: %w", err)
-	}
-
+func transcribeRemote(ctx context.Context, serverURL, audioFile string, chunkSize int) ([]types.ChunkResult, float64, error) {
 	file, err := os.Open(audioFile)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to open audio file: %w", err)
 	}
-	defer file.Close()
 
-	if _, err := io.Copy(fileWriter, file); err != nil {
-		return nil, 0, fmt.Errorf("failed to stream audio file: %w", err)
-	}
-
-	if err := writer.WriteField("format", "json"); err != nil {
-		return nil, 0, fmt.Errorf("failed to set format: %w", err)
-	}
-	if err := writer.WriteField("chunk_size", fmt.Sprintf("%d", chunkSize)); err != nil {
-		return nil, 0, fmt.Errorf("failed to set chunk_size: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return nil, 0, fmt.Errorf("failed to finalize multipart body: %w", err)
-	}
-
+	bodyReader, bodyWriter := io.Pipe()
+	writer := multipart.NewWriter(bodyWriter)
 	endpoint := serverURL + "/transcribe"
-	req, err := http.NewRequest(http.MethodPost, endpoint, body)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bodyReader)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+		cleanupErr := errors.Join(file.Close(), bodyReader.Close(), bodyWriter.Close())
+		return nil, 0, errors.Join(fmt.Errorf("failed to create request: %w", err), cleanupErr)
 	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := http.DefaultClient.Do(req)
+	go func() {
+		defer file.Close()
+		err := writeMultipartUpload(writer, file, filepath.Base(audioFile), chunkSize)
+		_ = bodyWriter.CloseWithError(err)
+	}()
+	defer func() { _ = bodyReader.Close() }()
+
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, 0, fmt.Errorf("remote request failed to %s: %w", endpoint, err)
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
 
 	var parsed remoteJSONResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := json.NewDecoder(response.Body).Decode(&parsed); err != nil {
 		return nil, 0, fmt.Errorf("failed to decode remote JSON response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if response.StatusCode != http.StatusOK {
 		if parsed.Error != "" {
-			return nil, 0, fmt.Errorf("remote server returned %s: %s", resp.Status, parsed.Error)
+			return nil, 0, fmt.Errorf("remote server returned %s: %s", response.Status, parsed.Error)
 		}
-		return nil, 0, fmt.Errorf("remote server returned %s", resp.Status)
+		return nil, 0, fmt.Errorf("remote server returned %s", response.Status)
 	}
 
 	if !parsed.Success {
@@ -107,10 +95,28 @@ func transcribeRemote(serverURL, audioFile string, chunkSize int) ([]types.Chunk
 	if len(parsed.Chunks) > 0 {
 		return parsed.Chunks, parsed.Duration, nil
 	}
-
 	if strings.TrimSpace(parsed.Text) == "" {
 		return []types.ChunkResult{}, parsed.Duration, nil
 	}
-
 	return []types.ChunkResult{{Text: parsed.Text}}, parsed.Duration, nil
+}
+
+func writeMultipartUpload(writer *multipart.Writer, file io.Reader, filename string, chunkSize int) error {
+	fileWriter, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return fmt.Errorf("create multipart file field: %w", err)
+	}
+	if _, err := io.Copy(fileWriter, file); err != nil {
+		return fmt.Errorf("stream audio file: %w", err)
+	}
+	if err := writer.WriteField("format", "json"); err != nil {
+		return fmt.Errorf("set format: %w", err)
+	}
+	if err := writer.WriteField("chunk_size", fmt.Sprintf("%d", chunkSize)); err != nil {
+		return fmt.Errorf("set chunk_size: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("finalize multipart body: %w", err)
+	}
+	return nil
 }

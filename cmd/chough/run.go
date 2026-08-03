@@ -68,7 +68,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "audio: %s %s•%s chunks: %ds %s•%s format: %s\n", srcInfo, dim, reset, opts.ChunkSize, dim, reset, opts.Format)
 
-		results, duration, err = transcribeRemote(serverURL, audioFile, opts.ChunkSize)
+		results, duration, err = transcribeRemote(ctx, serverURL, audioFile, opts.ChunkSize)
 		if err != nil {
 			return err
 		}

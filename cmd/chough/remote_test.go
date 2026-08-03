@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +52,7 @@ func TestTranscribeRemoteAcceptsOldAndNewResponses(t *testing.T) {
 			defer server.Close()
 			audioFile := writeRemoteTestAudio(t)
 
-			chunks, duration, err := transcribeRemote(server.URL, audioFile, 60)
+			chunks, duration, err := transcribeRemote(context.Background(), server.URL, audioFile, 60)
 			if err != nil {
 				t.Fatalf("transcribeRemote() error = %v", err)
 			}
@@ -64,6 +66,52 @@ func TestTranscribeRemoteAcceptsOldAndNewResponses(t *testing.T) {
 				t.Fatalf("optional token fields = durations %v, log_probs %v", chunks[0].Durations, chunks[0].LogProbs)
 			}
 		})
+	}
+}
+
+func TestTranscribeRemoteStreamsMultipartBody(t *testing.T) {
+	contentLength := make(chan int64, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		contentLength <- request.ContentLength
+		if err := request.ParseMultipartForm(1024); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if request.FormValue("chunk_size") != "30" || request.FormValue("format") != "json" {
+			http.Error(w, "invalid multipart fields", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"success":true,"text":"ok"}`)
+	}))
+	defer server.Close()
+
+	if _, _, err := transcribeRemote(context.Background(), server.URL, writeRemoteTestAudio(t), 30); err != nil {
+		t.Fatalf("transcribeRemote() error = %v", err)
+	}
+	if got := <-contentLength; got != -1 {
+		t.Fatalf("Content-Length = %d, want -1 for streaming upload", got)
+	}
+}
+
+func TestTranscribeRemoteHonorsCancellation(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		close(started)
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		cancel()
+	}()
+	_, _, err := transcribeRemote(ctx, server.URL, writeRemoteTestAudio(t), 60)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("transcribeRemote() error = %v, want context.Canceled", err)
 	}
 }
 
