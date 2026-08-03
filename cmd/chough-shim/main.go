@@ -43,7 +43,10 @@ func findTargetBinary() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve executable path: %w", err)
 	}
+	return findTargetBinaryFrom(execPath)
+}
 
+func findTargetBinaryFrom(execPath string) (string, error) {
 	candidateDirs := uniqueDirs([]string{filepath.Dir(execPath)})
 	if resolved, err := filepath.EvalSymlinks(execPath); err == nil {
 		candidateDirs = uniqueDirs(append(candidateDirs, filepath.Dir(resolved)))
