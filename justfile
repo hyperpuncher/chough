@@ -83,8 +83,7 @@ vuln:
 help:
     @just --list
 
-# Benchmark against whisper (requires hyperfine)
-benchmark AUDIO_FILE="test/audio/audio-1min.wav":
+# Benchmark cold CLI and warm server performance (requires hyperfine)
+benchmark *ARGS:
     @command -v hyperfine >/dev/null 2>&1 || (echo "Install hyperfine: cargo install hyperfine" && exit 1)
-    @echo "Benchmarking with hyperfine..."
-    ./benchmarks/benchmark.sh {{AUDIO_FILE}}
+    ./benchmarks/benchmark.sh {{ARGS}}
