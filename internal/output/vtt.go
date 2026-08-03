@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/hyperpuncher/chough/internal/tokens"
 	"github.com/hyperpuncher/chough/internal/types"
 )
 
@@ -31,7 +32,8 @@ func WriteVTT(out io.Writer, results []types.ChunkResult) error {
 	}
 
 	cueNum := 1
-	for _, result := range results {
+	var previousEndMillis int64
+	for _, result := range resultsForVTT(results) {
 		for _, cue := range GroupTokensIntoCues(result) {
 			text := strings.TrimSpace(cue.Text)
 			if text == "" {
@@ -40,7 +42,7 @@ func WriteVTT(out io.Writer, results []types.ChunkResult) error {
 
 			start := result.StartTime + cue.Start
 			end := result.StartTime + cue.End
-			startMillis := vttMilliseconds(start)
+			startMillis := max(vttMilliseconds(start), previousEndMillis)
 			endMillis := vttMilliseconds(end)
 			if endMillis <= startMillis {
 				endMillis = startMillis + 1
@@ -59,6 +61,7 @@ func WriteVTT(out io.Writer, results []types.ChunkResult) error {
 				return err
 			}
 
+			previousEndMillis = endMillis
 			cueNum++
 		}
 	}
@@ -81,13 +84,22 @@ func GroupTokensIntoCues(result types.ChunkResult) []Cue {
 	}
 
 	tokenCount := min(len(result.Tokens), len(result.Timestamps))
+	usesWordBoundaries := false
+	for _, token := range result.Tokens[:tokenCount] {
+		if tokens.StartsWord(token) {
+			usesWordBoundaries = true
+			break
+		}
+	}
 	cues := make([]Cue, 0)
 	current := Cue{}
 	active := false
 
 	for i := 0; i < tokenCount; i++ {
 		start, end := tokenInterval(result, i, tokenCount, chunkDuration)
-		if active && end-current.Start > maximumCueDuration {
+		overLimit := active && end-current.Start > maximumCueDuration
+		atSafeBoundary := !usesWordBoundaries || tokens.StartsWord(result.Tokens[i])
+		if overLimit && atSafeBoundary && !tokens.IsPunctuation(result.Tokens[i]) {
 			if cue, ok := finishCue(current, chunkDuration); ok {
 				cues = append(cues, cue)
 			}
@@ -115,6 +127,42 @@ func GroupTokensIntoCues(result types.ChunkResult) []Cue {
 		}
 	}
 	return cues
+}
+
+func resultsForVTT(results []types.ChunkResult) []types.ChunkResult {
+	combined := types.ChunkResult{}
+	hasTokens := false
+	hasDurations := true
+	for _, result := range results {
+		if len(result.Tokens) == 0 && strings.TrimSpace(result.Text) == "" {
+			continue
+		}
+		if len(result.Tokens) == 0 || len(result.Timestamps) != len(result.Tokens) {
+			return results
+		}
+		if !hasTokens {
+			combined.StartTime = result.StartTime
+		}
+		hasTokens = true
+		combined.EndTime = max(combined.EndTime, result.EndTime)
+		combined.Text += result.Text
+		combined.Tokens = append(combined.Tokens, result.Tokens...)
+		for _, timestamp := range result.Timestamps {
+			combined.Timestamps = append(combined.Timestamps, float32(result.StartTime-combined.StartTime)+timestamp)
+		}
+		if len(result.Durations) == len(result.Tokens) {
+			combined.Durations = append(combined.Durations, result.Durations...)
+		} else {
+			hasDurations = false
+		}
+	}
+	if !hasTokens {
+		return results
+	}
+	if !hasDurations {
+		combined.Durations = nil
+	}
+	return []types.ChunkResult{combined}
 }
 
 func tokenInterval(result types.ChunkResult, index, tokenCount int, chunkDuration float64) (float64, float64) {

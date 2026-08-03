@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -136,6 +137,33 @@ func TestGroupTokensIntoCuesSplitsSentencesWithoutOverlap(t *testing.T) {
 	}
 }
 
+func TestGroupTokensIntoCuesKeepsWordPiecesAndPunctuationTogether(t *testing.T) {
+	cues := GroupTokensIntoCues(types.ChunkResult{
+		StartTime:  0,
+		EndTime:    8,
+		Tokens:     []string{" first", "word", " second", "word", ".", " third"},
+		Timestamps: []float32{0, 4.8, 5.0, 5.2, 5.3, 6},
+		Durations:  []float32{4.8, 0.2, 0.2, 0.1, 0.2, 1},
+	})
+	if len(cues) != 3 {
+		t.Fatalf("cues = %+v, want 3", cues)
+	}
+	if cues[0].Text != "firstword" || cues[1].Text != "secondword." || cues[2].Text != "third" {
+		t.Fatalf("cue text = %+v", cues)
+	}
+}
+
+func TestGroupTokensIntoCuesStillSplitsLanguagesWithoutSpaces(t *testing.T) {
+	result := types.ChunkResult{StartTime: 0, EndTime: 8}
+	for i := range 8 {
+		result.Tokens = append(result.Tokens, "字")
+		result.Timestamps = append(result.Timestamps, float32(i))
+	}
+	if cues := GroupTokensIntoCues(result); len(cues) != 2 {
+		t.Fatalf("cues = %+v, want 2", cues)
+	}
+}
+
 func TestGroupTokensIntoCuesSplitsLongCue(t *testing.T) {
 	result := types.ChunkResult{StartTime: 0, EndTime: 8}
 	for i := range 8 {
@@ -145,6 +173,58 @@ func TestGroupTokensIntoCuesSplitsLongCue(t *testing.T) {
 	cues := GroupTokensIntoCues(result)
 	if len(cues) != 2 || cues[0].End-cues[0].Start > maximumCueDuration || cues[1].End-cues[1].Start > maximumCueDuration {
 		t.Fatalf("long cue split = %+v", cues)
+	}
+}
+
+func TestWriteVTTGoldenAcrossChunkBoundary(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteVTT(&out, []types.ChunkResult{
+		{
+			StartTime: 0, EndTime: 5, Text: "Hello world",
+			Tokens: []string{" Hello", " wor", "ld"}, Timestamps: []float32{1, 4.5, 4.7}, Durations: []float32{0.5, 0.2, 0.3},
+		},
+		{
+			StartTime: 5, EndTime: 10, Text: "again. Next sentence.",
+			Tokens: []string{" again", ".", " Next", " sentence", "."}, Timestamps: []float32{0, 0.4, 2, 2.5, 2.9}, Durations: []float32{0.4, 0.2, 0.5, 0.4, 0.2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("WriteVTT() error = %v", err)
+	}
+	want, err := os.ReadFile("testdata/chunk-boundary.vtt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != strings.TrimSpace(string(want)) {
+		t.Fatalf("WriteVTT() output:\n%s\nwant:\n%s", out.String(), want)
+	}
+}
+
+func TestWriteVTTGroupsTokensAcrossChunkBoundaries(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteVTT(&out, []types.ChunkResult{
+		{StartTime: 0, EndTime: 5, Text: "Hello", Tokens: []string{" Hello"}, Timestamps: []float32{4.5}, Durations: []float32{0.5}},
+		{StartTime: 5, EndTime: 10, Text: "world.", Tokens: []string{" world", "."}, Timestamps: []float32{0, 0.5}, Durations: []float32{0.5, 0.2}},
+	})
+	if err != nil {
+		t.Fatalf("WriteVTT() error = %v", err)
+	}
+	if strings.Count(out.String(), " --> ") != 1 || !strings.Contains(out.String(), "Hello world.") {
+		t.Fatalf("chunk boundary was not grouped:\n%s", out.String())
+	}
+}
+
+func TestWriteVTTPreventsOverlapAfterMillisecondRounding(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteVTT(&out, []types.ChunkResult{
+		{StartTime: 0, EndTime: 1.0006, Text: "first."},
+		{StartTime: 1.0004, EndTime: 1.5, Text: "second."},
+	})
+	if err != nil {
+		t.Fatalf("WriteVTT() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "00:00:01.001 --> 00:00:01.500") {
+		t.Fatalf("overlap was not clamped:\n%s", out.String())
 	}
 }
 
