@@ -177,8 +177,8 @@ func parseCLI(args []string) (cliOptions, error) {
 	if flagSet("host", "port", "workers", "queue-size", "max-upload", "allow-private-urls") {
 		return cliOptions{}, fmt.Errorf("%w: server flags require --server", errInvalidArgs)
 	}
-	if opts.ChunkSize <= 0 {
-		return cliOptions{}, fmt.Errorf("%w: chunk size must be positive", errInvalidArgs)
+	if err := transcribe.ValidateChunkSize(opts.ChunkSize); err != nil {
+		return cliOptions{}, fmt.Errorf("%w: %v", errInvalidArgs, err)
 	}
 
 	if fs.NArg() < 1 {

@@ -299,6 +299,9 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 	if format != "text" && format != "json" && format != "vtt" {
 		return "", "", 0, nil, fmt.Errorf("invalid format: %s (must be text, json, or vtt)", format)
 	}
+	if err := transcribe.ValidateChunkSize(chunkSize); err != nil {
+		return "", "", 0, nil, err
+	}
 
 	return filePath, format, chunkSize, cleanup, nil
 }

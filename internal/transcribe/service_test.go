@@ -93,6 +93,66 @@ func TestServiceTranscribe(t *testing.T) {
 	}
 }
 
+type contextRecognizer struct {
+	calls int
+}
+
+func (*contextRecognizer) SupportsTokenTimestamps() bool { return true }
+
+func (r *contextRecognizer) Transcribe(string) (*asr.Result, error) {
+	r.calls++
+	if r.calls == 1 {
+		return &asr.Result{
+			Text:       "before crossing duplicate",
+			Tokens:     []string{" before", " cross", "ing", " duplicate"},
+			Timestamps: []float32{55, 59.7, 60.1, 60.8},
+			Durations:  []float32{0.5, 0.4, 0.4, 0.4},
+		}, nil
+	}
+	return &asr.Result{
+		Text:       "context crossing after",
+		Tokens:     []string{" context", " cross", "ing", " after"},
+		Timestamps: []float32{0.5, 1.7, 2.1, 3},
+		Durations:  []float32{0.5, 0.4, 0.4, 0.4},
+	}, nil
+}
+
+func TestServiceUsesOverlappingContextWithoutDuplicatingWords(t *testing.T) {
+	processor := &fakeAudioProcessor{duration: 120}
+	service := NewService(&contextRecognizer{}, processor)
+	result, err := service.Transcribe(context.Background(), "audio.wav", Options{ChunkSize: 60})
+	if err != nil {
+		t.Fatalf("Transcribe() error = %v", err)
+	}
+	if result.Text != "before crossing after" {
+		t.Fatalf("Text = %q, want boundary word once", result.Text)
+	}
+	if got := processor.chunks; len(got) != 2 || got[0] != [2]float64{0, 62} || got[1] != [2]float64{58, 62} {
+		t.Fatalf("prepared chunks = %v", got)
+	}
+	if result.Chunks[0].Text != "before" || result.Chunks[1].Text != "crossing after" {
+		t.Fatalf("chunk text = %q / %q", result.Chunks[0].Text, result.Chunks[1].Text)
+	}
+	if result.Chunks[1].Timestamps[0] != 0 {
+		t.Fatalf("boundary timestamp = %v, want 0", result.Chunks[1].Timestamps[0])
+	}
+}
+
+type invalidContextRecognizer struct{}
+
+func (invalidContextRecognizer) SupportsTokenTimestamps() bool { return true }
+func (invalidContextRecognizer) Transcribe(string) (*asr.Result, error) {
+	return &asr.Result{Text: "missing timestamps"}, nil
+}
+
+func TestServiceRejectsMissingContextTimestamps(t *testing.T) {
+	service := NewService(invalidContextRecognizer{}, &fakeAudioProcessor{duration: 120})
+	_, err := service.Transcribe(context.Background(), "audio.wav", Options{ChunkSize: 60})
+	if err == nil || !strings.Contains(err.Error(), "unaligned token timestamps") {
+		t.Fatalf("Transcribe() error = %v", err)
+	}
+}
+
 type resultRecognizer struct {
 	result *asr.Result
 }
@@ -266,7 +326,22 @@ func TestServiceSerializesRecognizerCalls(t *testing.T) {
 
 func TestServiceRejectsInvalidChunkSize(t *testing.T) {
 	service := NewService(&fakeRecognizer{}, &fakeAudioProcessor{duration: 60})
-	if _, err := service.Transcribe(context.Background(), "audio.mp3", Options{}); err == nil {
-		t.Fatal("Transcribe() error = nil, want chunk-size validation error")
+	for _, size := range []int{0, MaximumChunkSize + 1} {
+		if _, err := service.Transcribe(context.Background(), "audio.mp3", Options{ChunkSize: size}); err == nil {
+			t.Fatalf("Transcribe() with chunk size %d error = nil, want validation error", size)
+		}
+	}
+}
+
+func TestServiceKeepsContextualWindowsWithinMaximumChunkSize(t *testing.T) {
+	processor := &fakeAudioProcessor{duration: 600}
+	service := NewService(&contextRecognizer{}, processor)
+	if _, err := service.Transcribe(context.Background(), "audio.wav", Options{ChunkSize: MaximumChunkSize - 1}); err != nil {
+		t.Fatalf("Transcribe() error = %v", err)
+	}
+	for _, chunk := range processor.chunks {
+		if chunk[1] > MaximumChunkSize {
+			t.Fatalf("prepared chunk duration = %v, maximum = %d", chunk[1], MaximumChunkSize)
+		}
 	}
 }

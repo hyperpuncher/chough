@@ -137,6 +137,7 @@ func TestParseRequestValidatesJSONChunkSize(t *testing.T) {
 	for _, body := range []string{
 		`{"base64":"YQ==","chunk_size":0}`,
 		`{"base64":"YQ==","chunk_size":-1}`,
+		`{"base64":"YQ==","chunk_size":301}`,
 	} {
 		request := httptest.NewRequest("POST", "/transcribe", bytes.NewBufferString(body))
 		request.Header.Set("Content-Type", "application/json")
@@ -154,7 +155,7 @@ func TestParseRequestUsesDefaultAndExplicitJSONChunkSize(t *testing.T) {
 		body string
 		want int
 	}{
-		{name: "default", body: `{"base64":"YQ=="}`, want: 60},
+		{name: "default", body: `{"base64":"YQ=="}`, want: 20},
 		{name: "explicit", body: `{"base64":"YQ==","chunk_size":30}`, want: 30},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

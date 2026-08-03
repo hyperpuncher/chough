@@ -27,9 +27,11 @@ func TestParseCLIServerDefaults(t *testing.T) {
 }
 
 func TestParseCLIRejectsInvalidChunkSize(t *testing.T) {
-	_, err := parseCLI([]string{"--chunk-size", "0", "audio.wav"})
-	if !errors.Is(err, errInvalidArgs) {
-		t.Fatalf("parseCLI() error = %v, want errInvalidArgs", err)
+	for _, size := range []string{"0", "301"} {
+		_, err := parseCLI([]string{"--chunk-size", size, "audio.wav"})
+		if !errors.Is(err, errInvalidArgs) {
+			t.Fatalf("parseCLI(%s) error = %v, want errInvalidArgs", size, err)
+		}
 	}
 }
 

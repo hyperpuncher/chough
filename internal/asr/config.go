@@ -7,6 +7,7 @@ type Config struct {
 	SampleRate int
 	FeatureDim int
 	Provider   string
+	Dither     float32
 }
 
 func DefaultConfig(modelPath string) Config {
@@ -16,5 +17,6 @@ func DefaultConfig(modelPath string) Config {
 		SampleRate: 16000,
 		FeatureDim: 80,
 		Provider:   "cpu",
+		Dither:     0.001,
 	}
 }
