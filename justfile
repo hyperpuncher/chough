@@ -25,28 +25,28 @@ release-cross-snapshot:
 
 # Run the CLI with test file
 dev *ARGS:
-    CHOUGH_MODEL=./sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 go run ./cmd/chough {{ARGS}}
+    go run ./cmd/chough {{ARGS}}
 
-# Test with default 30s chunks
-test:
-    CHOUGH_MODEL=./sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 ./dist/chough ./test/audio/audio-1min.wav 30
+# Test with 30s chunks
+test: build
+    ./dist/chough -c 30 ./test/audio/audio-1min.wav
 
 # Test different chunk sizes
-test-chunks:
+test-chunks: build
     #!/usr/bin/env bash
-    export CHOUGH_MODEL=./sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+    set -euo pipefail
     echo "=== 15s chunks ==="
-    time ./dist/chough ./test/audio/audio-1min.wav 15 2>&1 | tail -3
+    time ./dist/chough -c 15 ./test/audio/audio-1min.wav 2>&1 | tail -3
     echo ""
     echo "=== 30s chunks ==="
-    time ./dist/chough ./test/audio/audio-1min.wav 30 2>&1 | tail -3
+    time ./dist/chough -c 30 ./test/audio/audio-1min.wav 2>&1 | tail -3
     echo ""
     echo "=== 60s chunks ==="
-    time ./dist/chough ./test/audio/audio-1min.wav 60 2>&1 | tail -3
+    time ./dist/chough -c 60 ./test/audio/audio-1min.wav 2>&1 | tail -3
 
 # Test 5-minute file (good stress test)
-test-long:
-    CHOUGH_MODEL=./sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8 time ./dist/chough ./test/audio/audio-5min.wav 30
+test-long: build
+    time ./dist/chough -c 30 ./test/audio/audio-5min.wav
 
 # Run Go tests
 unit-test:
@@ -78,6 +78,17 @@ update:
 # Check for vulnerabilities
 vuln:
     govulncheck ./...
+
+# Run all local validation checks
+check:
+    @files="$(gofmt -l .)"; if [ -n "$files" ]; then echo "unformatted Go files:"; echo "$files"; exit 1; fi
+    go test -race ./...
+    go vet ./...
+    golangci-lint run ./...
+    govulncheck ./...
+    actionlint
+    shellcheck benchmarks/*.sh scripts/*.sh
+    git diff --check
 
 # Show help
 help:
