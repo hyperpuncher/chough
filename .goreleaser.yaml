@@ -119,11 +119,13 @@ winget:
     package_identifier: hyperpuncher.chough
     publisher: hyperpuncher
     publisher_url: https://github.com/hyperpuncher
+    publisher_support_url: https://github.com/hyperpuncher/chough/issues
     short_description: Fast ASR CLI using Parakeet TDT 0.6b V3
     description: Fast, memory-efficient ASR CLI using sherpa-onnx with chunked processing.
     homepage: https://github.com/hyperpuncher/chough
     license: MIT
     license_url: https://github.com/hyperpuncher/chough/blob/main/LICENSE
+    release_notes_url: https://github.com/hyperpuncher/chough/releases/tag/{{ .Tag }}
     tags: [asr, transcription, speech-to-text, cli]
     dependencies:
       - package_identifier: Gyan.FFmpeg.Essentials
@@ -142,6 +144,7 @@ winget:
 
 aurs:
   - name: chough-bin
+    skip_upload: true
     description: Fast ASR CLI using Parakeet TDT 0.6b V3
     homepage: https://github.com/hyperpuncher/chough
     license: MIT
