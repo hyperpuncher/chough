@@ -5,14 +5,21 @@ import (
 	"io"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/hyperpuncher/chough/internal/tokens"
 	"github.com/hyperpuncher/chough/internal/types"
 )
 
 const (
-	maximumCueDuration = 5.0
-	minimumCueDuration = 0.001
+	// Netflix permits cues from 5/6 second through 7 seconds. BBC broadcast
+	// subtitles use at most two 37-character lines and target 180 WPM.
+	minimumCueDuration       = 5.0 / 6.0
+	maximumCueDuration       = 7.0
+	minimumTimestampDuration = 0.001
+	maximumLineCharacters    = 37
+	maximumCueCharacters     = 2 * maximumLineCharacters
+	wordsPerSecond           = 3.0
 )
 
 // Cue represents a subtitle cue for VTT.
@@ -69,6 +76,19 @@ func WriteVTT(out io.Writer, results []types.ChunkResult) error {
 	return nil
 }
 
+type cueUnit struct {
+	text        string
+	start       float64
+	end         float64
+	sentenceEnd bool
+	clauseEnd   bool
+}
+
+type groupedCue struct {
+	Cue
+	wordCount int
+}
+
 // GroupTokensIntoCues groups tokens into subtitle cues.
 func GroupTokensIntoCues(result types.ChunkResult) []Cue {
 	chunkDuration := result.EndTime - result.StartTime
@@ -84,49 +104,142 @@ func GroupTokensIntoCues(result types.ChunkResult) []Cue {
 	}
 
 	tokenCount := min(len(result.Tokens), len(result.Timestamps))
+	tokenValues := result.Tokens[:tokenCount]
 	usesWordBoundaries := false
-	for _, token := range result.Tokens[:tokenCount] {
+	for _, token := range tokenValues {
 		if tokens.StartsWord(token) {
 			usesWordBoundaries = true
 			break
 		}
 	}
-	cues := make([]Cue, 0)
-	current := Cue{}
-	active := false
 
-	for i := 0; i < tokenCount; i++ {
-		start, end := tokenInterval(result, i, tokenCount, chunkDuration)
-		overLimit := active && end-current.Start > maximumCueDuration
-		atSafeBoundary := !usesWordBoundaries || tokens.StartsWord(result.Tokens[i])
-		if overLimit && atSafeBoundary && !tokens.IsPunctuation(result.Tokens[i]) {
-			if cue, ok := finishCue(current, chunkDuration); ok {
-				cues = append(cues, cue)
-			}
-			current = Cue{}
-			active = false
-		}
-		if !active {
-			current.Start = start
-			active = true
-		}
-		current.Text += result.Tokens[i]
-		current.End = end
+	units := make([]cueUnit, 0, tokenCount)
+	for _, unit := range tokens.Units(tokenValues) {
+		start, _ := tokenInterval(result, unit.Start, tokenCount, chunkDuration)
+		_, end := tokenInterval(result, unit.End, tokenCount, chunkDuration)
+		text := strings.Join(tokenValues[unit.Start:unit.End+1], "")
+		units = append(units, cueUnit{
+			text:        text,
+			start:       start,
+			end:         end,
+			sentenceEnd: IsSentenceEnd(text),
+			clauseEnd:   isClauseEnd(text),
+		})
+	}
 
-		if IsSentenceEnd(result.Tokens[i]) {
-			if cue, ok := finishCue(current, chunkDuration); ok {
-				cues = append(cues, cue)
-			}
-			current = Cue{}
-			active = false
-		}
+	grouped := groupCueUnits(units, usesWordBoundaries)
+	cues := make([]Cue, len(grouped))
+	for index := range grouped {
+		cues[index] = grouped[index].Cue
 	}
-	if active {
-		if cue, ok := finishCue(current, chunkDuration); ok {
-			cues = append(cues, cue)
-		}
-	}
+	adjustCueTimings(cues, grouped, chunkDuration)
 	return cues
+}
+
+func groupCueUnits(units []cueUnit, countWords bool) []groupedCue {
+	grouped := make([]groupedCue, 0, len(units))
+	for first := 0; first < len(units); {
+		last := first
+		lastClause := -1
+		for next := first; next < len(units); next++ {
+			text := cueUnitText(units, first, next)
+			exceedsDuration := units[next].end-units[first].start > maximumCueDuration
+			exceedsLength := utf8.RuneCountInString(text) > maximumCueCharacters
+			if next > first && (exceedsDuration || exceedsLength) {
+				if lastClause >= first {
+					last = lastClause
+				}
+				break
+			}
+
+			last = next
+			if units[next].clauseEnd {
+				lastClause = next
+			}
+			if units[next].sentenceEnd {
+				break
+			}
+		}
+
+		wordCount := 0
+		if countWords {
+			wordCount = last - first + 1
+		}
+		grouped = append(grouped, groupedCue{
+			Cue: Cue{
+				Start: units[first].start,
+				End:   min(units[last].end, units[first].start+maximumCueDuration),
+				Text:  formatCueLines(units, first, last),
+			},
+			wordCount: wordCount,
+		})
+		first = last + 1
+	}
+	return grouped
+}
+
+func cueUnitText(units []cueUnit, first, last int) string {
+	var text strings.Builder
+	for index := first; index <= last; index++ {
+		text.WriteString(units[index].text)
+	}
+	return strings.TrimSpace(text.String())
+}
+
+func formatCueLines(units []cueUnit, first, last int) string {
+	text := cueUnitText(units, first, last)
+	if first == last || utf8.RuneCountInString(text) <= maximumLineCharacters {
+		return text
+	}
+
+	bestBreak := first
+	bestPunctuation := false
+	bestOverflow := math.MaxInt
+	bestImbalance := math.MaxInt
+	for index := first; index < last; index++ {
+		left := cueUnitText(units, first, index)
+		right := cueUnitText(units, index+1, last)
+		leftLength := utf8.RuneCountInString(left)
+		rightLength := utf8.RuneCountInString(right)
+		overflow := max(0, leftLength-maximumLineCharacters) + max(0, rightLength-maximumLineCharacters)
+		punctuation := units[index].sentenceEnd || units[index].clauseEnd
+		imbalance := max(leftLength, rightLength) - min(leftLength, rightLength)
+		if overflow < bestOverflow ||
+			(overflow == bestOverflow && punctuation && !bestPunctuation) ||
+			(overflow == bestOverflow && punctuation == bestPunctuation && imbalance < bestImbalance) {
+			bestBreak = index
+			bestPunctuation = punctuation
+			bestOverflow = overflow
+			bestImbalance = imbalance
+		}
+	}
+	return cueUnitText(units, first, bestBreak) + "\n" + cueUnitText(units, bestBreak+1, last)
+}
+
+func adjustCueTimings(cues []Cue, grouped []groupedCue, chunkDuration float64) {
+	for index := range cues {
+		availableEnd := chunkDuration
+		if index+1 < len(cues) {
+			availableEnd = cues[index+1].Start
+		}
+		readableDuration := minimumCueDuration
+		if grouped[index].wordCount > 0 {
+			readableDuration = max(readableDuration, float64(grouped[index].wordCount)/wordsPerSecond)
+		}
+		desiredEnd := cues[index].Start + min(readableDuration, maximumCueDuration)
+		cues[index].End = min(max(cues[index].End, desiredEnd), availableEnd, cues[index].Start+maximumCueDuration)
+		if cues[index].End <= cues[index].Start {
+			cues[index].End = min(cues[index].Start+minimumTimestampDuration, availableEnd)
+		}
+	}
+}
+
+func isClauseEnd(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	return strings.HasSuffix(trimmed, ",") || strings.HasSuffix(trimmed, ";") ||
+		strings.HasSuffix(trimmed, ":") || strings.HasSuffix(trimmed, "—") ||
+		strings.HasSuffix(trimmed, "–") || strings.HasSuffix(trimmed, "，") ||
+		strings.HasSuffix(trimmed, "；") || strings.HasSuffix(trimmed, "：")
 }
 
 func resultsForVTT(results []types.ChunkResult) []types.ChunkResult {
@@ -190,27 +303,9 @@ func tokenInterval(result types.ChunkResult, index, tokenCount int, chunkDuratio
 		return start, end
 	}
 	if start < chunkDuration {
-		return start, min(start+minimumCueDuration, chunkDuration)
+		return start, min(start+minimumTimestampDuration, chunkDuration)
 	}
-	return max(0, chunkDuration-minimumCueDuration), chunkDuration
-}
-
-func finishCue(cue Cue, chunkDuration float64) (Cue, bool) {
-	cue.Text = strings.TrimSpace(cue.Text)
-	if cue.Text == "" {
-		return Cue{}, false
-	}
-	cue.Start = clampTime(cue.Start, chunkDuration)
-	cue.End = clampTime(cue.End, chunkDuration)
-	if cue.End <= cue.Start {
-		if cue.Start < chunkDuration {
-			cue.End = min(cue.Start+minimumCueDuration, chunkDuration)
-		} else {
-			cue.Start = max(0, chunkDuration-minimumCueDuration)
-			cue.End = chunkDuration
-		}
-	}
-	return cue, cue.End > cue.Start
+	return max(0, chunkDuration-minimumTimestampDuration), chunkDuration
 }
 
 func clampTime(value, maximum float64) float64 {
@@ -226,7 +321,9 @@ func clampTime(value, maximum float64) float64 {
 // IsSentenceEnd checks if a token ends a sentence.
 func IsSentenceEnd(token string) bool {
 	trimmed := strings.TrimSpace(token)
-	return strings.HasSuffix(trimmed, ".") || strings.HasSuffix(trimmed, "!") || strings.HasSuffix(trimmed, "?")
+	return strings.HasSuffix(trimmed, ".") || strings.HasSuffix(trimmed, "!") ||
+		strings.HasSuffix(trimmed, "?") || strings.HasSuffix(trimmed, "。") ||
+		strings.HasSuffix(trimmed, "！") || strings.HasSuffix(trimmed, "？")
 }
 
 // FormatVTTTime formats seconds as a WebVTT timestamp.

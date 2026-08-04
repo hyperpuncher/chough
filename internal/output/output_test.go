@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/hyperpuncher/chough/internal/types"
 )
@@ -96,7 +97,7 @@ func TestWriteVTTUsesFinalTokenFallback(t *testing.T) {
 	}
 }
 
-func TestGroupTokensIntoCuesUsesTokenDuration(t *testing.T) {
+func TestGroupTokensIntoCuesUsesMinimumDisplayDuration(t *testing.T) {
 	cues := GroupTokensIntoCues(types.ChunkResult{
 		StartTime:  10,
 		EndTime:    12,
@@ -104,8 +105,9 @@ func TestGroupTokensIntoCuesUsesTokenDuration(t *testing.T) {
 		Timestamps: []float32{1},
 		Durations:  []float32{0.4},
 	})
-	if len(cues) != 1 || cues[0].Start != 1 || !near(cues[0].End, 1.4) {
-		t.Fatalf("cues = %+v, want 1.0-1.4", cues)
+	wantEnd := 1 + minimumCueDuration
+	if len(cues) != 1 || cues[0].Start != 1 || !near(cues[0].End, wantEnd) {
+		t.Fatalf("cues = %+v, want 1.0-%v", cues, wantEnd)
 	}
 }
 
@@ -145,10 +147,10 @@ func TestGroupTokensIntoCuesKeepsWordPiecesAndPunctuationTogether(t *testing.T) 
 		Timestamps: []float32{0, 4.8, 5.0, 5.2, 5.3, 6},
 		Durations:  []float32{4.8, 0.2, 0.2, 0.1, 0.2, 1},
 	})
-	if len(cues) != 3 {
-		t.Fatalf("cues = %+v, want 3", cues)
+	if len(cues) != 2 {
+		t.Fatalf("cues = %+v, want 2", cues)
 	}
-	if cues[0].Text != "firstword" || cues[1].Text != "secondword." || cues[2].Text != "third" {
+	if cues[0].Text != "firstword secondword." || cues[1].Text != "third" {
 		t.Fatalf("cue text = %+v", cues)
 	}
 }
@@ -173,6 +175,57 @@ func TestGroupTokensIntoCuesSplitsLongCue(t *testing.T) {
 	cues := GroupTokensIntoCues(result)
 	if len(cues) != 2 || cues[0].End-cues[0].Start > maximumCueDuration || cues[1].End-cues[1].Start > maximumCueDuration {
 		t.Fatalf("long cue split = %+v", cues)
+	}
+}
+
+func TestGroupTokensIntoCuesPrefersClausePunctuation(t *testing.T) {
+	cues := GroupTokensIntoCues(types.ChunkResult{
+		StartTime: 0,
+		EndTime:   10,
+		Tokens: []string{
+			" When", " we", " arrived", ",", " everyone", " was", " already", " waiting", " outside", " quietly", ".",
+		},
+		Timestamps: []float32{0, 1, 2, 2.5, 3, 4, 5, 6, 7, 8, 8.2},
+	})
+	if len(cues) != 2 || cues[0].Text != "When we arrived," {
+		t.Fatalf("clause split = %+v", cues)
+	}
+}
+
+func TestGroupTokensIntoCuesWrapsAtPunctuation(t *testing.T) {
+	cues := GroupTokensIntoCues(types.ChunkResult{
+		StartTime: 0,
+		EndTime:   7,
+		Tokens: []string{
+			" This", " is", " a", " clear", " opening", " clause", ",", " followed", " by", " several", " more", " words", ".",
+		},
+		Timestamps: []float32{0, 0.4, 0.7, 0.9, 1.3, 1.8, 2.2, 2.4, 2.9, 3.2, 3.8, 4.2, 4.6},
+	})
+	if len(cues) != 1 || !strings.Contains(cues[0].Text, ",\n") {
+		t.Fatalf("wrapped cue = %+v", cues)
+	}
+	lines := strings.Split(cues[0].Text, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("lines = %q, want 2", lines)
+	}
+	for _, line := range lines {
+		if utf8.RuneCountInString(line) > maximumLineCharacters {
+			t.Fatalf("line exceeds %d characters: %q", maximumLineCharacters, line)
+		}
+	}
+}
+
+func TestGroupTokensIntoCuesTargetsReadableWordRate(t *testing.T) {
+	result := types.ChunkResult{StartTime: 0, EndTime: 10}
+	for index := range 12 {
+		result.Tokens = append(result.Tokens, " word")
+		result.Timestamps = append(result.Timestamps, float32(index)/10)
+		result.Durations = append(result.Durations, 0.1)
+	}
+	result.Tokens[len(result.Tokens)-1] += "."
+	cues := GroupTokensIntoCues(result)
+	if len(cues) != 1 || !near(cues[0].End-cues[0].Start, 4) {
+		t.Fatalf("readable cue timing = %+v, want 4 seconds", cues)
 	}
 }
 
@@ -225,6 +278,17 @@ func TestWriteVTTPreventsOverlapAfterMillisecondRounding(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "00:00:01.001 --> 00:00:01.500") {
 		t.Fatalf("overlap was not clamped:\n%s", out.String())
+	}
+}
+
+func TestIsSentenceEndSupportsCommonPunctuation(t *testing.T) {
+	for _, token := range []string{"word.", "word!", "word?", "字。", "字！", "字？"} {
+		if !IsSentenceEnd(token) {
+			t.Fatalf("IsSentenceEnd(%q) = false", token)
+		}
+	}
+	if IsSentenceEnd("word,") {
+		t.Fatal("IsSentenceEnd() treated clause punctuation as a sentence ending")
 	}
 }
 
