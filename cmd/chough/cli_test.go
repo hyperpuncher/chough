@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -74,5 +75,12 @@ func TestParseCLIHelp(t *testing.T) {
 	_, err := parseCLI([]string{"--help"})
 	if !errors.Is(err, errShowHelp) {
 		t.Fatalf("parseCLI() error = %v, want errShowHelp", err)
+	}
+	var out bytes.Buffer
+	printUsage(&out)
+	for _, want := range []string{"--chunk-size int", "default: 20", "--server", "CHOUGH_URL"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("help is missing %q", want)
+		}
 	}
 }

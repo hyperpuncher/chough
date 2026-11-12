@@ -42,11 +42,9 @@ type cliOptions struct {
 }
 
 type cliFlag struct {
-	short       string
-	long        string
-	arg         string
-	description string
-	defaultVal  string
+	short string
+	long  string
+	arg   string
 }
 
 type usageRow struct {
@@ -56,23 +54,21 @@ type usageRow struct {
 }
 
 var usageFlags = []cliFlag{
-	{short: "c", long: "chunk-size", arg: "int", description: "chunk size in seconds", defaultVal: fmt.Sprint(transcribe.DefaultChunkSize)},
-	{short: "f", long: "format", arg: "string", description: "output format: text, json, vtt", defaultVal: "text"},
-	{short: "o", long: "output", arg: "file", description: "output file", defaultVal: "stdout"},
-	{short: "r", long: "remote", description: "transcribe via remote server using CHOUGH_URL"},
-	{long: "version", description: "show version"},
+	{short: "c", long: "chunk-size", arg: "int"},
+	{short: "f", long: "format", arg: "string"},
+	{short: "o", long: "output", arg: "file"},
+	{short: "r", long: "remote"},
+	{long: "version"},
 }
 
-var defaultServerOptions = server.DefaultOptions()
-
 var serverFlags = []cliFlag{
-	{long: "server", description: "run in server mode"},
-	{long: "host", arg: "string", description: "server host", defaultVal: defaultServerOptions.Host},
-	{long: "port", arg: "int", description: "server port", defaultVal: fmt.Sprint(defaultServerOptions.Port)},
-	{long: "workers", arg: "int", description: "concurrent preparation workers", defaultVal: fmt.Sprint(defaultServerOptions.Workers)},
-	{long: "queue-size", arg: "int", description: "maximum queued requests", defaultVal: fmt.Sprint(defaultServerOptions.MaxQueueSize)},
-	{long: "max-upload", arg: "int", description: "max upload size in MB", defaultVal: fmt.Sprint(defaultServerOptions.MaxUploadMB)},
-	{long: "allow-private-urls", description: "allow URL downloads from private networks"},
+	{long: "server"},
+	{long: "host", arg: "string"},
+	{long: "port", arg: "int"},
+	{long: "workers", arg: "int"},
+	{long: "queue-size", arg: "int"},
+	{long: "max-upload", arg: "int"},
+	{long: "allow-private-urls"},
 }
 
 func init() {
@@ -100,56 +96,42 @@ func disableColors() {
 	cyan = ""
 }
 
-func parseCLI(args []string) (cliOptions, error) {
+func newCLIFlagSet() (*flag.FlagSet, *cliOptions) {
 	fs := flag.NewFlagSet("chough", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	defaults := defaultServerOptions
+	opts := &cliOptions{}
+	defaults := server.DefaultOptions()
 
-	chunkSize := fs.Int("c", transcribe.DefaultChunkSize, "chunk size in seconds")
-	fs.IntVar(chunkSize, "chunk-size", transcribe.DefaultChunkSize, "chunk size in seconds")
-	format := fs.String("f", "text", "output format (text, json, vtt)")
-	fs.StringVar(format, "format", "text", "output format (text, json, vtt)")
-	outputFile := fs.String("o", "", "output file")
-	fs.StringVar(outputFile, "output", "", "output file")
-	showVersion := fs.Bool("version", false, "show version")
-	remoteMode := fs.Bool("r", false, "transcribe via remote server using CHOUGH_URL")
-	fs.BoolVar(remoteMode, "remote", false, "transcribe via remote server using CHOUGH_URL")
+	fs.IntVar(&opts.ChunkSize, "c", transcribe.DefaultChunkSize, "chunk size in seconds")
+	fs.IntVar(&opts.ChunkSize, "chunk-size", transcribe.DefaultChunkSize, "chunk size in seconds")
+	fs.StringVar(&opts.Format, "f", "text", "output format: text, json, vtt")
+	fs.StringVar(&opts.Format, "format", "text", "output format: text, json, vtt")
+	fs.StringVar(&opts.OutputFile, "o", "", "output file")
+	fs.StringVar(&opts.OutputFile, "output", "", "output file")
+	fs.BoolVar(&opts.ShowVersion, "version", false, "show version")
+	fs.BoolVar(&opts.RemoteMode, "r", false, "transcribe via remote server using CHOUGH_URL")
+	fs.BoolVar(&opts.RemoteMode, "remote", false, "transcribe via remote server using CHOUGH_URL")
 
-	serverMode := fs.Bool("server", false, "run in server mode")
-	serverHost := fs.String("host", defaults.Host, "server host")
-	serverPort := fs.Int("port", defaults.Port, "server port")
-	workers := fs.Int("workers", defaults.Workers, "concurrent preparation workers")
-	queueSize := fs.Int("queue-size", defaults.MaxQueueSize, "maximum queued requests")
-	maxUploadMB := fs.Int64("max-upload", defaults.MaxUploadMB, "max upload size in MB")
-	allowPrivateURLs := fs.Bool("allow-private-urls", false, "allow URL downloads from private networks")
+	fs.BoolVar(&opts.ServerMode, "server", false, "run in server mode")
+	fs.StringVar(&opts.ServerOptions.Host, "host", defaults.Host, "server host")
+	fs.IntVar(&opts.ServerOptions.Port, "port", defaults.Port, "server port")
+	fs.IntVar(&opts.ServerOptions.Workers, "workers", defaults.Workers, "concurrent preparation workers")
+	fs.IntVar(&opts.ServerOptions.MaxQueueSize, "queue-size", defaults.MaxQueueSize, "maximum queued requests")
+	fs.Int64Var(&opts.ServerOptions.MaxUploadMB, "max-upload", defaults.MaxUploadMB, "max upload size in MB")
+	fs.BoolVar(&opts.ServerOptions.AllowPrivateURLs, "allow-private-urls", false, "allow URL downloads from private networks")
+	fs.Usage = func() { printUsage(os.Stderr) }
+	return fs, opts
+}
 
-	fs.Usage = func() {
-		printUsage()
-	}
-
+func parseCLI(args []string) (cliOptions, error) {
+	fs, opts := newCLIFlagSet()
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return cliOptions{}, errShowHelp
 		}
 		return cliOptions{}, fmt.Errorf("%w: %v", errInvalidArgs, err)
 	}
-
-	opts := cliOptions{
-		ChunkSize:   *chunkSize,
-		Format:      strings.ToLower(*format),
-		OutputFile:  *outputFile,
-		ShowVersion: *showVersion,
-		RemoteMode:  *remoteMode,
-		ServerMode:  *serverMode,
-		ServerOptions: server.ServerOptions{
-			Host:             *serverHost,
-			Port:             *serverPort,
-			Workers:          *workers,
-			MaxQueueSize:     *queueSize,
-			MaxUploadMB:      *maxUploadMB,
-			AllowPrivateURLs: *allowPrivateURLs,
-		},
-	}
+	opts.Format = strings.ToLower(opts.Format)
 
 	setFlags := make(map[string]bool)
 	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
@@ -163,7 +145,7 @@ func parseCLI(args []string) (cliOptions, error) {
 	}
 
 	if opts.ShowVersion {
-		return opts, nil
+		return *opts, nil
 	}
 	if opts.ServerMode {
 		if fs.NArg() != 0 {
@@ -172,7 +154,7 @@ func parseCLI(args []string) (cliOptions, error) {
 		if opts.RemoteMode || flagSet("c", "chunk-size", "f", "format", "o", "output") {
 			return cliOptions{}, fmt.Errorf("%w: transcription flags cannot be used with --server", errInvalidArgs)
 		}
-		return opts, nil
+		return *opts, nil
 	}
 	if flagSet("host", "port", "workers", "queue-size", "max-upload", "allow-private-urls") {
 		return cliOptions{}, fmt.Errorf("%w: server flags require --server", errInvalidArgs)
@@ -200,7 +182,7 @@ func parseCLI(args []string) (cliOptions, error) {
 
 	switch opts.Format {
 	case "text", "json", "vtt":
-		return opts, nil
+		return *opts, nil
 	default:
 		return cliOptions{}, fmt.Errorf("%w: unknown format %q (valid: text, json, vtt)", errInvalidArgs, opts.Format)
 	}
@@ -233,7 +215,7 @@ func coloredFlagLabel(f cliFlag) string {
 	return cyan + base + " " + yellow + f.arg + reset
 }
 
-func printAlignedRows(rows []usageRow) {
+func printAlignedRows(out io.Writer, rows []usageRow) {
 	maxLabelWidth := 0
 	for _, row := range rows {
 		if w := utf8.RuneCountInString(row.plainLabel); w > maxLabelWidth {
@@ -243,70 +225,68 @@ func printAlignedRows(rows []usageRow) {
 
 	for _, row := range rows {
 		pad := strings.Repeat(" ", maxLabelWidth-utf8.RuneCountInString(row.plainLabel))
-		fmt.Fprintf(os.Stderr, "  %s%s  %s\n", row.label, pad, row.desc)
+		_, _ = fmt.Fprintf(out, "  %s%s  %s\n", row.label, pad, row.desc)
 	}
 }
 
-func printUsage() {
-	fmt.Fprintf(os.Stderr, "%s🐦‍⬛ %schough%s\n\n", bold, magenta, reset)
-
-	fmt.Fprintf(os.Stderr, "%sCLI Usage:%s\n", bold, reset)
-	fmt.Fprintln(os.Stderr, "  chough [flags] [audio-file]")
-	fmt.Fprintln(os.Stderr, "  cat audio | chough [flags]")
-	fmt.Fprintln(os.Stderr)
-
-	fmt.Fprintf(os.Stderr, "%sCLI Flags:%s\n", bold, reset)
-	flagRows := make([]usageRow, 0, len(usageFlags))
-	for _, f := range usageFlags {
-		desc := f.description
-		if f.defaultVal != "" {
-			desc += fmt.Sprintf(" %s(default: %s)%s", dim, f.defaultVal, reset)
+func printFlagRows(out io.Writer, fs *flag.FlagSet, flags []cliFlag) {
+	rows := make([]usageRow, 0, len(flags))
+	for _, f := range flags {
+		registered := fs.Lookup(f.long)
+		description := registered.Usage
+		value := registered.DefValue
+		if f.long == "output" {
+			value = "stdout"
 		}
-		flagRows = append(flagRows, usageRow{
+		if f.arg != "" {
+			description += fmt.Sprintf(" %s(default: %s)%s", dim, value, reset)
+		}
+		rows = append(rows, usageRow{
 			label:      coloredFlagLabel(f),
 			plainLabel: plainFlagLabel(f),
-			desc:       desc,
+			desc:       description,
 		})
 	}
-	printAlignedRows(flagRows)
-	fmt.Fprintln(os.Stderr)
+	printAlignedRows(out, rows)
+}
 
-	fmt.Fprintf(os.Stderr, "%sServer Usage:%s\n", bold, reset)
-	fmt.Fprintln(os.Stderr, "  chough --server [flags]")
-	fmt.Fprintln(os.Stderr)
+func printUsage(out io.Writer) {
+	fs, _ := newCLIFlagSet()
+	_, _ = fmt.Fprintf(out, "%s🐦‍⬛ %schough%s\n\n", bold, magenta, reset)
 
-	fmt.Fprintf(os.Stderr, "%sServer Flags:%s\n", bold, reset)
-	serverRows := make([]usageRow, 0, len(serverFlags))
-	for _, f := range serverFlags {
-		desc := f.description
-		if f.defaultVal != "" {
-			desc += fmt.Sprintf(" %s(default: %s)%s", dim, f.defaultVal, reset)
-		}
-		serverRows = append(serverRows, usageRow{
-			label:      coloredFlagLabel(f),
-			plainLabel: plainFlagLabel(f),
-			desc:       desc,
-		})
-	}
-	printAlignedRows(serverRows)
-	fmt.Fprintln(os.Stderr)
+	_, _ = fmt.Fprintf(out, "%sCLI Usage:%s\n", bold, reset)
+	_, _ = fmt.Fprintln(out, "  chough [flags] [audio-file]")
+	_, _ = fmt.Fprintln(out, "  cat audio | chough [flags]")
+	_, _ = fmt.Fprintln(out)
 
-	fmt.Fprintf(os.Stderr, "%sExamples:%s\n", bold, reset)
+	_, _ = fmt.Fprintf(out, "%sCLI Flags:%s\n", bold, reset)
+	printFlagRows(out, fs, usageFlags)
+	_, _ = fmt.Fprintln(out)
+
+	_, _ = fmt.Fprintf(out, "%sServer Usage:%s\n", bold, reset)
+	_, _ = fmt.Fprintln(out, "  chough --server [flags]")
+	_, _ = fmt.Fprintln(out)
+
+	_, _ = fmt.Fprintf(out, "%sServer Flags:%s\n", bold, reset)
+	printFlagRows(out, fs, serverFlags)
+	_, _ = fmt.Fprintln(out)
+
+	_, _ = fmt.Fprintf(out, "%sExamples:%s\n", bold, reset)
 	exampleRows := []usageRow{
-		{label: fmt.Sprintf("%s$%s chough audio.mp3", green, reset), plainLabel: "$ chough audio.mp3", desc: fmt.Sprintf("%s# 60s chunks, text output%s", dim, reset)},
+		{label: fmt.Sprintf("%s$%s chough audio.mp3", green, reset), plainLabel: "$ chough audio.mp3", desc: fmt.Sprintf("%s# default chunks, text output%s", dim, reset)},
 		{label: fmt.Sprintf("%s$%s cat audio.mp3 | chough", green, reset), plainLabel: "$ cat audio.mp3 | chough", desc: fmt.Sprintf("%s# transcribe from pipe%s", dim, reset)},
 		{label: fmt.Sprintf("%s$%s chough -c 30 talk.mp3", green, reset), plainLabel: "$ chough -c 30 talk.mp3", desc: fmt.Sprintf("%s# 30s chunks%s", dim, reset)},
 		{label: fmt.Sprintf("%s$%s CHOUGH_URL=http://localhost:8080 chough -r audio.mp3", green, reset), plainLabel: "$ CHOUGH_URL=http://localhost:8080 chough -r audio.mp3", desc: fmt.Sprintf("%s# transcribe via remote server%s", dim, reset)},
 		{label: fmt.Sprintf("%s$%s chough -f vtt -o subs.vtt audio.mp3", green, reset), plainLabel: "$ chough -f vtt -o subs.vtt audio.mp3", desc: fmt.Sprintf("%s# WebVTT to file%s", dim, reset)},
 		{label: fmt.Sprintf("%s$%s chough --server --port 8080", green, reset), plainLabel: "$ chough --server --port 8080", desc: fmt.Sprintf("%s# Run server on port 8080%s", dim, reset)},
 	}
-	printAlignedRows(exampleRows)
-	fmt.Fprintln(os.Stderr)
+	printAlignedRows(out, exampleRows)
+	_, _ = fmt.Fprintln(out)
 
-	fmt.Fprintf(os.Stderr, "%sEnvironment:%s\n", bold, reset)
+	_, _ = fmt.Fprintf(out, "%sEnvironment:%s\n", bold, reset)
 	envRows := []usageRow{
 		{label: fmt.Sprintf("%sCHOUGH_MODEL%s", cyan, reset), plainLabel: "CHOUGH_MODEL", desc: fmt.Sprintf("path to model dir %s(optional, auto-downloaded if not set)%s", dim, reset)},
 		{label: fmt.Sprintf("%sCHOUGH_URL%s", cyan, reset), plainLabel: "CHOUGH_URL", desc: fmt.Sprintf("remote server URL %s(required with --remote, must start with http:// or https://)%s", dim, reset)},
 	}
-	printAlignedRows(envRows)
+	printAlignedRows(out, envRows)
 }

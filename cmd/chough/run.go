@@ -22,7 +22,7 @@ func run(ctx context.Context, args []string) error {
 		case errors.Is(err, errShowHelp):
 			return nil
 		case errors.Is(err, errInvalidArgs):
-			printUsage()
+			printUsage(os.Stderr)
 			return err
 		default:
 			return err
