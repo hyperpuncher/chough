@@ -25,7 +25,7 @@ const (
 )
 
 // Published by GitHub for the ModelURL release asset.
-const defaultModelSHA256 = "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf"
+const defaultModelSHA256 = "1495e91b59d7fc53ddca91f3431758ec99f8fa253fdb0e1e851be0f72b14b0f9"
 
 var requiredModelFiles = []string{EncoderFile, DecoderFile, JoinerFile, TokensFile}
 
@@ -40,7 +40,7 @@ var defaultModel = modelDefinition{
 	name:   DefaultModelName,
 	url:    ModelURL,
 	sha256: defaultModelSHA256,
-	size:   487170055,
+	size:   487211443,
 }
 
 // Progress describes model installation progress.
