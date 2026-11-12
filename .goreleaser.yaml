@@ -146,7 +146,6 @@ winget:
 
 aurs:
   - name: chough-bin
-    skip_upload: true
     description: Fast ASR CLI using Parakeet TDT 0.6b V3
     homepage: https://github.com/hyperpuncher/chough
     license: MIT
