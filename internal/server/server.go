@@ -200,19 +200,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSize int, cleanup func(), err error) {
-	format = "text"
-	chunkSize = transcribe.DefaultChunkSize
-	defer func() {
-		if err != nil && cleanup != nil {
-			cleanup()
-			cleanup = nil
-		}
-	}()
-
+func (s *Server) parseRequest(r *http.Request) (string, string, int, func(), error) {
+	var req TranscribeRequest
 	contentType := r.Header.Get("Content-Type")
+	multipartRequest := strings.HasPrefix(contentType, "multipart/form-data")
 
-	if strings.HasPrefix(contentType, "multipart/form-data") {
+	if multipartRequest {
 		// ParseMultipartForm spills upload data beyond 32 MB to disk.
 		multipartMemory := min(s.options.maxUploadBytes(), 32*megabyte)
 		if err := r.ParseMultipartForm(multipartMemory); err != nil {
@@ -220,34 +213,15 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		}
 		defer r.MultipartForm.RemoveAll()
 
-		file, header, err := r.FormFile("file")
-		if err != nil {
-			return "", "", 0, nil, fmt.Errorf("missing file field: %w", err)
-		}
-		defer file.Close()
-		if header.Size > s.options.maxUploadBytes() {
-			return "", "", 0, nil, fmt.Errorf("%w: maximum is %d MB", errUploadTooLarge, s.options.MaxUploadMB)
-		}
-
-		filePath, _, err = copyToTemp("chough-upload-*", file, s.options.maxUploadBytes())
-		if err != nil {
-			return "", "", 0, nil, fmt.Errorf("save uploaded file: %w", err)
-		}
-		cleanup = func() { os.Remove(filePath) }
-
-		if f := r.FormValue("format"); f != "" {
-			format = strings.ToLower(f)
-		}
-		if c := r.FormValue("chunk_size"); c != "" {
-			n, parseErr := strconv.Atoi(c)
-			if parseErr != nil || n <= 0 {
+		req.Format = r.FormValue("format")
+		if value := r.FormValue("chunk_size"); value != "" {
+			size, err := strconv.Atoi(value)
+			if err != nil {
 				return "", "", 0, nil, fmt.Errorf("chunk_size must be a positive integer")
 			}
-			chunkSize = n
+			req.ChunkSize = &size
 		}
-
 	} else if strings.HasPrefix(contentType, "application/json") {
-		var req TranscribeRequest
 		decoder := json.NewDecoder(r.Body)
 		if err := decoder.Decode(&req); err != nil {
 			return "", "", 0, nil, fmt.Errorf("invalid JSON: %w", err)
@@ -255,55 +229,64 @@ func (s *Server) parseRequest(r *http.Request) (filePath, format string, chunkSi
 		if err := decoder.Decode(&struct{}{}); err != io.EOF {
 			return "", "", 0, nil, fmt.Errorf("invalid JSON: expected one object")
 		}
-
-		if req.URL != "" {
-			filePath, err = s.downloadFromURL(r.Context(), req.URL)
-			if err != nil {
-				return "", "", 0, nil, err
-			}
-			cleanup = func() { os.Remove(filePath) }
-
-		} else if req.Base64 != "" {
-			maxEncoded := (s.options.maxUploadBytes() + 2) / 3 * 4
-			if int64(len(req.Base64)) > maxEncoded {
-				return "", "", 0, nil, fmt.Errorf("%w: maximum is %d MB", errUploadTooLarge, s.options.MaxUploadMB)
-			}
-			decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(req.Base64))
-			filePath, _, err = copyToTemp("chough-b64-*", decoder, s.options.maxUploadBytes())
-			if err != nil {
-				if errors.Is(err, errUploadTooLarge) {
-					return "", "", 0, nil, err
-				}
-				return "", "", 0, nil, fmt.Errorf("invalid base64: %w", err)
-			}
-			cleanup = func() { os.Remove(filePath) }
-
-		} else {
-			return "", "", 0, nil, fmt.Errorf("missing url or base64 in request")
-		}
-
-		if req.Format != "" {
-			format = strings.ToLower(req.Format)
-		}
-		if req.ChunkSize != nil {
-			if *req.ChunkSize <= 0 {
-				return "", "", 0, nil, fmt.Errorf("chunk_size must be positive")
-			}
-			chunkSize = *req.ChunkSize
-		}
-
 	} else {
 		return "", "", 0, nil, fmt.Errorf("unsupported content type: %s", contentType)
 	}
 
+	format := strings.ToLower(req.Format)
+	if format == "" {
+		format = "text"
+	}
 	if format != "text" && format != "json" && format != "vtt" {
 		return "", "", 0, nil, fmt.Errorf("invalid format: %s (must be text, json, or vtt)", format)
+	}
+	chunkSize := transcribe.DefaultChunkSize
+	if req.ChunkSize != nil {
+		chunkSize = *req.ChunkSize
 	}
 	if err := transcribe.ValidateChunkSize(chunkSize); err != nil {
 		return "", "", 0, nil, err
 	}
 
-	return filePath, format, chunkSize, cleanup, nil
+	var filePath string
+	var err error
+	switch {
+	case multipartRequest:
+		file, header, openErr := r.FormFile("file")
+		if openErr != nil {
+			return "", "", 0, nil, fmt.Errorf("missing file field: %w", openErr)
+		}
+		defer file.Close()
+		if header.Size > s.options.maxUploadBytes() {
+			return "", "", 0, nil, fmt.Errorf("%w: maximum is %d MB", errUploadTooLarge, s.options.MaxUploadMB)
+		}
+		filePath, _, err = copyToTemp("chough-upload-*", file, s.options.maxUploadBytes())
+		if err != nil {
+			return "", "", 0, nil, fmt.Errorf("save uploaded file: %w", err)
+		}
+	case req.URL != "":
+		filePath, err = s.downloadFromURL(r.Context(), req.URL)
+		if err != nil {
+			return "", "", 0, nil, err
+		}
+	case req.Base64 != "":
+		maxEncoded := (s.options.maxUploadBytes() + 2) / 3 * 4
+		if int64(len(req.Base64)) > maxEncoded {
+			return "", "", 0, nil, fmt.Errorf("%w: maximum is %d MB", errUploadTooLarge, s.options.MaxUploadMB)
+		}
+		decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(req.Base64))
+		filePath, _, err = copyToTemp("chough-b64-*", decoder, s.options.maxUploadBytes())
+		if err != nil {
+			if errors.Is(err, errUploadTooLarge) {
+				return "", "", 0, nil, err
+			}
+			return "", "", 0, nil, fmt.Errorf("invalid base64: %w", err)
+		}
+	default:
+		return "", "", 0, nil, fmt.Errorf("missing url or base64 in request")
+	}
+
+	return filePath, format, chunkSize, func() { os.Remove(filePath) }, nil
 }
 
 func (s *Server) downloadFromURL(ctx context.Context, rawURL string) (string, error) {
@@ -339,20 +322,21 @@ func (s *Server) downloadFromURL(ctx context.Context, rawURL string) (string, er
 	return filePath, nil
 }
 
-func copyToTemp(pattern string, source io.Reader, maxBytes int64) (path string, written int64, err error) {
+func copyToTemp(pattern string, source io.Reader, maxBytes int64) (string, int64, error) {
 	tmpFile, err := os.CreateTemp("", pattern)
 	if err != nil {
 		return "", 0, fmt.Errorf("create temporary file: %w", err)
 	}
-	path = tmpFile.Name()
+	path := tmpFile.Name()
+	complete := false
 	defer func() {
-		if err != nil {
+		if !complete {
 			tmpFile.Close()
 			os.Remove(path)
 		}
 	}()
 
-	written, err = io.Copy(tmpFile, io.LimitReader(source, maxBytes+1))
+	written, err := io.Copy(tmpFile, io.LimitReader(source, maxBytes+1))
 	if err != nil {
 		return "", 0, err
 	}
@@ -362,6 +346,7 @@ func copyToTemp(pattern string, source io.Reader, maxBytes int64) (path string, 
 	if err = tmpFile.Close(); err != nil {
 		return "", 0, fmt.Errorf("close temporary file: %w", err)
 	}
+	complete = true
 	return path, written, nil
 }
 

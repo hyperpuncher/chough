@@ -6,11 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/hyperpuncher/chough/internal/transcribe"
@@ -117,6 +120,92 @@ func TestParseRequestEnforcesMultipartFileLimit(t *testing.T) {
 			}
 			cleanup()
 		})
+	}
+}
+
+func TestParseRequestRejectsOptionsBeforeAcquiringAudio(t *testing.T) {
+	requests := 0
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = w.Write(bytes.Repeat([]byte{'a'}, 44))
+	}))
+	defer source.Close()
+	server := NewServer(ServerOptions{MaxUploadMB: 1, Workers: 1, AllowPrivateURLs: true}, nil, "test")
+
+	for _, input := range []string{`"base64":"YQ=="`, `"url":"` + source.URL + `"`} {
+		for _, option := range []string{`"format":"invalid"`, `"chunk_size":0`, `"chunk_size":301`} {
+			t.Run(input+option, func(t *testing.T) {
+				dir := t.TempDir()
+				t.Setenv("TMPDIR", dir)
+				request := httptest.NewRequest(http.MethodPost, "/transcribe", strings.NewReader("{"+input+","+option+"}"))
+				request.Header.Set("Content-Type", "application/json")
+				if _, _, _, _, err := server.parseRequest(request); err == nil {
+					t.Fatal("expected invalid options to be rejected")
+				}
+				assertNoTempFiles(t, dir)
+			})
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("invalid options caused %d downloads", requests)
+	}
+}
+
+func TestParseRequestRemovesMultipartSpillOnInvalidOptions(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	server := &Server{options: ServerOptions{MaxUploadMB: 1}}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	file, err := writer.CreateFormFile("file", "audio.wav")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write(bytes.Repeat([]byte{'a'}, 2*int(megabyte))); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("format", "invalid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/transcribe", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	if _, _, _, _, err := server.parseRequest(request); err == nil || !strings.Contains(err.Error(), "invalid format") {
+		t.Fatalf("parseRequest() error = %v, want invalid format", err)
+	}
+	assertNoTempFiles(t, dir)
+}
+
+func TestCopyToTempRemovesPartialFiles(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		reader io.Reader
+	}{
+		{name: "oversized", reader: strings.NewReader("too large")},
+		{name: "read failure", reader: io.MultiReader(strings.NewReader("a"), iotest.ErrReader(errors.New("read failed")))},
+		{name: "invalid base64", reader: base64.NewDecoder(base64.StdEncoding, strings.NewReader("YQ==!"))},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("TMPDIR", dir)
+			if _, _, err := copyToTemp("chough-test-*", test.reader, 1); err == nil {
+				t.Fatal("expected copy failure")
+			}
+			assertNoTempFiles(t, dir)
+		})
+	}
+}
+
+func assertNoTempFiles(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("temporary files remain: %v", entries)
 	}
 }
 
