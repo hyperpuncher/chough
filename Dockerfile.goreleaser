@@ -13,7 +13,8 @@ ENV XDG_CACHE_HOME=/home/chough/.cache
 
 # Copy binary and sidecar runtime libs to /opt/chough/.
 # Keep explicit paths so goreleaser's docker context layout is stable.
-COPY chough /opt/chough/
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/chough /opt/chough/
 COPY .tmp-libbundle/current/linux_amd64/libonnxruntime.so /opt/chough/
 COPY .tmp-libbundle/current/linux_amd64/libsherpa-onnx-c-api.so /opt/chough/
 COPY .tmp-libbundle/current/linux_amd64/libsherpa-onnx-cxx-api.so /opt/chough/

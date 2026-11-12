@@ -32,6 +32,7 @@ builds:
       - CGO_ENABLED=1
       - CC=o64-clang
       - CXX=o64-clang++
+      - MACOSX_DEPLOYMENT_TARGET=13.0
     ldflags:
       - -s -w -X main.version={{ .Tag }}
     hooks:
@@ -47,6 +48,7 @@ builds:
       - CGO_ENABLED=1
       - CC=oa64-clang
       - CXX=oa64-clang++
+      - MACOSX_DEPLOYMENT_TARGET=13.0
     ldflags:
       - -s -w -X main.version={{ .Tag }}
     hooks:
@@ -109,9 +111,9 @@ homebrew_casks:
     directory: Casks
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}"]
           end
 
 winget:
@@ -165,25 +167,23 @@ aurs:
       install -dm755 "${pkgdir}/usr/bin"
       ln -sf "/opt/chough/chough" "${pkgdir}/usr/bin/chough"
 
-# Docker images (v1 - stable)
-dockers:
+dockers_v2:
   - id: chough
-    goos: linux
-    goarch: amd64
-    ids:
-      - linux-amd64
-    image_templates:
-      - "ghcr.io/hyperpuncher/chough:latest"
-      - "ghcr.io/hyperpuncher/chough:{{ .Tag }}"
-      - "ghcr.io/hyperpuncher/chough:v{{ .Major }}"
-      - "ghcr.io/hyperpuncher/chough:v{{ .Major }}.{{ .Minor }}"
+    ids: [linux-amd64]
+    platforms: [linux/amd64]
+    images: [ghcr.io/hyperpuncher/chough]
+    tags:
+      - latest
+      - "{{ .Tag }}"
+      - "v{{ .Major }}"
+      - "v{{ .Major }}.{{ .Minor }}"
     dockerfile: Dockerfile.goreleaser
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
+    flags: ["--pull"]
+    labels:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
     extra_files:
       - .tmp-libbundle/current/linux_amd64/libonnxruntime.so
       - .tmp-libbundle/current/linux_amd64/libsherpa-onnx-c-api.so
