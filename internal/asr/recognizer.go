@@ -7,7 +7,7 @@ import (
 
 	"github.com/hyperpuncher/chough/internal/audio"
 	"github.com/hyperpuncher/chough/internal/models"
-	sherpa "github.com/k2-fsa/sherpa-onnx-go/sherpa_onnx"
+	sherpa "github.com/k2-fsa/sherpa-onnx-go/v2/sherpa_onnx"
 )
 
 // Recognizer owns the native sherpa recognizer.
