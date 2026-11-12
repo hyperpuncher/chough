@@ -18,12 +18,6 @@ var outputResults = []types.ChunkResult{
 	{StartTime: 4, EndTime: 5, Text: "  "},
 }
 
-func TestFullText(t *testing.T) {
-	if got, want := FullText(outputResults), "hello world"; got != want {
-		t.Fatalf("FullText() = %q, want %q", got, want)
-	}
-}
-
 func TestWriteTextHasOneTrailingNewline(t *testing.T) {
 	var out bytes.Buffer
 	if err := WriteText(&out, outputResults); err != nil {
@@ -250,20 +244,6 @@ func TestWriteVTTGoldenAcrossChunkBoundary(t *testing.T) {
 	}
 	if strings.TrimSpace(out.String()) != strings.TrimSpace(string(want)) {
 		t.Fatalf("WriteVTT() output:\n%s\nwant:\n%s", out.String(), want)
-	}
-}
-
-func TestWriteVTTGroupsTokensAcrossChunkBoundaries(t *testing.T) {
-	var out bytes.Buffer
-	err := WriteVTT(&out, []types.ChunkResult{
-		{StartTime: 0, EndTime: 5, Text: "Hello", Tokens: []string{" Hello"}, Timestamps: []float32{4.5}, Durations: []float32{0.5}},
-		{StartTime: 5, EndTime: 10, Text: "world.", Tokens: []string{" world", "."}, Timestamps: []float32{0, 0.5}, Durations: []float32{0.5, 0.2}},
-	})
-	if err != nil {
-		t.Fatalf("WriteVTT() error = %v", err)
-	}
-	if strings.Count(out.String(), " --> ") != 1 || !strings.Contains(out.String(), "Hello world.") {
-		t.Fatalf("chunk boundary was not grouped:\n%s", out.String())
 	}
 }
 

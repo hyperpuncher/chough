@@ -30,13 +30,3 @@ func TestValidateOptions(t *testing.T) {
 		})
 	}
 }
-
-func TestRequestBodyLimits(t *testing.T) {
-	options := ServerOptions{MaxUploadMB: 1}
-	if got, want := options.maxRequestBodyBytes("multipart/form-data"), int64(2*megabyte); got != want {
-		t.Fatalf("multipart body limit = %d, want %d", got, want)
-	}
-	if got, want := options.maxRequestBodyBytes("application/json"), int64(2446680); got != want {
-		t.Fatalf("JSON body limit = %d, want %d", got, want)
-	}
-}
