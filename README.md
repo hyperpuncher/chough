@@ -31,7 +31,7 @@ paru -S chough-bin
 ### macOS (Homebrew)
 
 ```bash
-brew install --cask hyperpuncher/tap/chough
+brew i hyperpuncher/tap/chough
 ```
 
 ### Windows (Winget)
