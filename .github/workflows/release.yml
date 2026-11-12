@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run tests
+      - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version: "stable"
@@ -35,22 +35,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate release notes
-        shell: bash
-        run: |
-          previous_tag=$(git describe --tags --match "v[0-9]*" --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
-          repository_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-
-          {
-            echo "### What's Changed"
-            echo
-            if [[ -n "$previous_tag" ]]; then
-              git log --reverse --format="- %s [\`%h\`](${repository_url}/commit/%H)" "${previous_tag}..${GITHUB_REF_NAME}"
-              echo
-              echo "**Full Changelog:** [${previous_tag}...${GITHUB_REF_NAME}](${repository_url}/compare/${previous_tag}...${GITHUB_REF_NAME})"
-            else
-              git log --reverse --format="- %s [\`%h\`](${repository_url}/commit/%H)" "$GITHUB_REF_NAME"
-            fi
-          } > /tmp/release-notes.md
+        uses: hyperpuncher/release-notes@v1
+        id: notes
 
       - name: Release with goreleaser-cross
         env:
@@ -71,12 +57,13 @@ jobs:
             -lc 'apt-get update >/dev/null && apt-get install -y patchelf >/dev/null && git config --global --add safe.directory /work && go mod download && goreleaser check && goreleaser release --clean'
 
       - name: Update GitHub release notes
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.notes.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES_FILE: ${{ steps.notes.outputs.path }}
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
-              --notes-file /tmp/release-notes.md
+              --notes-file "$NOTES_FILE"
           fi
