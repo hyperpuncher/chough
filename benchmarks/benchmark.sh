@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compare cold CLI and warm server performance with hyperfine.
+# Compare cold CLI and warm server performance with hyperfine 2.x.
 #
 # Default:
 #   ./benchmarks/benchmark.sh
@@ -187,26 +187,26 @@ append_hyperfine_results() {
 		--arg server_peak "$server_peak_bytes" \
 		--arg processing "$processing_seconds" \
 		--argjson threads "$threads" '
+		if .schema_version != 2 then error("hyperfine JSON schema 2 is required") else . end |
 		.results[] | {
 			mode: $mode,
 			fixture: $fixture,
 			audio_duration_seconds: $duration,
-			implementation: .command,
+			implementation: (.name // .command),
 			sherpa_threads: $threads,
-			mean_seconds: .mean,
-			stddev_seconds: .stddev,
-			min_seconds: .min,
-			max_seconds: .max,
-			user_seconds: .user,
-			system_seconds: .system,
-			times_seconds: .times,
+			mean_seconds: .summary.time_wall_clock.mean,
+			stddev_seconds: .summary.time_wall_clock.stddev,
+			min_seconds: .summary.time_wall_clock.min,
+			max_seconds: .summary.time_wall_clock.max,
+			user_seconds: .summary.time_user.mean,
+			system_seconds: .summary.time_system.mean,
+			times_seconds: [.measurements[].time_wall_clock.value],
 			peak_memory_bytes: (
 				if $mode == "warm" and $server_peak != "" then ($server_peak | tonumber)
-				elif (.memory_usage_byte // [] | length) > 0 then (.memory_usage_byte | max)
-				else null end
+				else (.summary.memory_peak_resident.max // null) end
 			),
 			client_peak_memory_bytes: (
-				if $mode == "warm" and (.memory_usage_byte // [] | length) > 0 then (.memory_usage_byte | max)
+				if $mode == "warm" then (.summary.memory_peak_resident.max // null)
 				else null end
 			),
 			startup_seconds: (if $startup == "" then null else ($startup | tonumber) end),
@@ -223,9 +223,8 @@ run_cold_benchmarks() {
 			raw_json="$RESULTS_DIR/raw/cold_${i}_$(basename "$fixture").json"
 			command="$(shell_quote "${BINARIES[$i]}") -f text $(shell_quote "$fixture")"
 			echo "cold: ${BINARY_NAMES[$i]} / $(basename "$fixture")"
-			# Keep each binary in a separate hyperfine process. On Linux,
-			# memory_usage_byte is a cumulative child-process high-water mark.
-			hyperfine --warmup 1 --runs "$RUNS" --export-json "$raw_json" --command-name "${BINARY_NAMES[$i]}" "$command"
+			# Use bash to interpret paths escaped by shell_quote.
+			hyperfine --shell bash --warmup 1 --runs "$RUNS" --export-json "$raw_json" --command-name "${BINARY_NAMES[$i]}" "$command"
 			append_hyperfine_results "cold" "$fixture" "$duration" "$raw_json" "" "" "" "${BINARY_THREADS[$i]}"
 		done
 	done
@@ -296,7 +295,7 @@ run_warm_benchmarks() {
 			raw_json="$RESULTS_DIR/raw/warm_${name}_$(basename "$fixture").json"
 			command="curl --fail --silent --output /dev/null -F $(shell_quote "file=@$fixture") -F format=json http://127.0.0.1:$port/transcribe"
 			echo "warm: $name / $(basename "$fixture")"
-			hyperfine --warmup 1 --runs "$RUNS" --export-json "$raw_json" --command-name "$name" "$command"
+			hyperfine --shell bash --warmup 1 --runs "$RUNS" --export-json "$raw_json" --command-name "$name" "$command"
 
 			response="$RESULTS_DIR/raw/response_${name}_$(basename "$fixture").json"
 			curl --fail --silent --output "$response" -F "file=@$fixture" -F format=json "http://127.0.0.1:$port/transcribe"
